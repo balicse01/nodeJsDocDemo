@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: configuration.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: configuration.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*-
+ *
+ *  This file is part of Oracle NoSQL Database
+ *  Copyright (C) 2014, 2018 Oracle and/or its affiliates.  All rights reserved.
+ *
+ * If you have received this file as part of Oracle NoSQL Database the
+ * following applies to the work as a whole:
+ *
+ *   Oracle NoSQL Database server software is free software: you can
+ *   redistribute it and/or modify it under the terms of the GNU Affero
+ *   General Public License as published by the Free Software Foundation,
+ *   version 3.
+ *
+ *   Oracle NoSQL Database is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *   Affero General Public License for more details.
+ *
+ * If you have received this file as part of Oracle NoSQL Database Client or
+ * distributed separately the following applies:
+ *
+ *   Oracle NoSQL Database client software is free software: you can
+ *   redistribute it and/or modify it under the terms of the Apache License
+ *   as published by the Apache Software Foundation, version 2.0.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * and/or the Apache License in the LICENSE file along with Oracle NoSQL
+ * Database client or server distribution.  If not, see
+ * &lt;http://www.gnu.org/licenses/>
+ * or
+ * &lt;http://www.apache.org/licenses/LICENSE-2.0>.
+ *
+ * An active Oracle commercial licensing agreement for this product supersedes
+ * these licenses and in such case the license notices, but not the copyright
+ * notice, may be removed by you in connection with your distribution that is
+ * in accordance with the commercial licensing terms.
+ *
+ * For more information please contact:
+ *
+ * berkeleydb-info_us@oracle.com
+ *
+ */
+'use strict';
+
+/*global Logger*/
+/*global Errors*/
+
+var Types = require('./types');
+var Proxy = require('./proxy');
+
+
+var defaultDurability = new Types.Durability(
+  Types.SyncPolicy.NO_SYNC,
+  Types.ReplicaAckPolicy.SIMPLE_MAJORITY,
+  Types.SyncPolicy.NO_SYNC);
+exports.defaultDurability = defaultDurability;
+
+var defaultConsistency = new Types.Consistency(
+  Types.SimpleConsistency.NONE_REQUIRED);
+exports.defaultConsistency = defaultConsistency;
+
+/**
+ * Defines a set of configuration values used to connect to an Oracle NoSQL
+ * Database.
+ * @param {Object} [options] An object with the initial values to construct
+ * Configuration, the object has the following format:
+ *      { storeName : '',
+ *        storeHelperHosts: '',
+ *        defaultDurability : Durability,
+ *        defaultConsistency : Consistency,
+ *        requestTimeout: 0,
+ *        iteratorBufferSize : 0,
+ *        readZones: [''],
+ *        username: '',
+ *        connectionAttempts : 0,
+ *        proxy : ProxyConfiguration }
+ * @property {String} storeName Indicates the name of the store to be
+ * connected with.
+ * @property {Array} storeHelperHosts Indicates the helper host to be
+ * used with this connection.
+ * @property {Consistency} defaultConsistency Indicates the consistency
+ * used by default.
+ * @property {Durability} defaultDurability Indicates the durability
+ * used by default.
+ * @property {Number} requestTimeout The timeout used for any request
+ * to the proxy.
+ * @property {Number} iteratorBufferSize The number of rows used as
+ * buffer by Iterators or Streams.
+ * @property {Array} readZones Indicates the read zones to be used
+ * with this connection.
+ * @property {String} username The username used when connecting to a
+ * server.
+ * @property {Number} connectionAttempts The number of attempts to try
+ * when connecting to a server.
+ * @property {Proxy} proxy The proxy configuration.
+ * @constructor
+ */
+function Configuration(/*Object*/ options) {
+
+  this.storeName = null;
+  this.storeHelperHosts = null;
+  this.defaultDurability = defaultDurability;
+  this.defaultConsistency = defaultConsistency;
+  this.requestTimeout = 5000;
+  this.iteratorBufferSize = 100;
+  this.readZones = null;
+  this.username = null;
+  this.connectionAttempts = 3;
+  this.proxy = new Proxy.ProxyConfiguration(null);
+
+  if (options) {
+    if (options.storeName !== undefined)
+      this.storeName = options.storeName;
+    if (options.storeName !== undefined)
+      this.storeName = options.storeName;
+    if (options.storeHelperHosts !== undefined)
+      this.storeHelperHosts = options.storeHelperHosts;
+    if (options.defaultDurability !== undefined)
+      this.defaultDurability = options.defaultDurability;
+    if (options.defaultConsistency !== undefined)
+      this.defaultConsistency = options.defaultConsistency;
+    if (options.requestTimeout !== undefined)
+      this.requestTimeout = options.requestTimeout;
+    if (options.iteratorBufferSize !== undefined)
+      this.iteratorBufferSize = options.iteratorBufferSize;
+    if (options.readZones !== undefined)
+      this.readZones = options.readZones;
+    if (options.username !== undefined)
+      this.username = options.username;
+    if (options.connectionAttempts !== undefined)
+      this.connectionAttempts = options.connectionAttempts;
+    if (options.proxy !== undefined)
+      this.proxy = new Proxy.ProxyConfiguration(options.proxy);
+  }
+
+}
+
+exports.Configuration = Configuration;
+
+
+/**
+ * Tries to read a file with a ProxyConfiguration object
+ * @param {string} filename the full path for the file
+ * @returns {Configuration}
+ */
+function readConfiguration(filename) {
+  if (fs.existsSync(filename)) {
+    var options = JSON.parse(fs.readFileSync(filename));
+    var configuration = new Configuration(options);
+    validateConfiguration(configuration);
+
+    // no file can hold these items, they have thrift methods
+    configuration.defaultConsistency = defaultConsistency;
+    configuration.defaultDurability = defaultDurability;
+
+    return configuration;
+  } else {
+    throw new Errors.NoSQLDBError (
+      'The specified file \'' + filename +
+      '\' was not found' );
+  }
+}
+exports.readConfiguration = readConfiguration;
+
+function validateConfiguration(/*Configuration*/ configuration) {
+  if (typeof configuration.proxy.startProxy === 'undefined')
+    throw new Errors.ParameterError('startProxy');
+  if (typeof configuration.proxy.host === 'undefined')
+    throw new Errors.ParameterError('host');
+  if (configuration.proxy.startProxy) {
+    if (typeof configuration.proxy.KVCLIENT_JAR === 'undefined')
+      throw new Errors.ParameterError('KVCLIENT_JAR');
+    if (typeof configuration.proxy.KVPROXY_JAR === 'undefined')
+      throw new Errors.ParameterError('KVPROXY_JAR');
+  }
+}
+exports.validateConfiguration = validateConfiguration;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Configuration.html">Configuration</a></li><li><a href="ConnectionError.html">ConnectionError</a></li><li><a href="Consistency.html">Consistency</a></li><li><a href="DeleteResult.html">DeleteResult</a></li><li><a href="Durability.html">Durability</a></li><li><a href="ExecutionFuture.html">ExecutionFuture</a></li><li><a href="ExecutionId.html">ExecutionId</a></li><li><a href="FieldRange.html">FieldRange</a></li><li><a href="GetResult.html">GetResult</a></li><li><a href="Iterator.html">Iterator</a></li><li><a href="IteratorError.html">IteratorError</a></li><li><a href="KeyPair.html">KeyPair</a></li><li><a href="KeyPairResult.html">KeyPairResult</a></li><li><a href="Logger.html">Logger</a></li><li><a href="ModuleInfo.html">ModuleInfo</a></li><li><a href="MultiGetKeyResult.html">MultiGetKeyResult</a></li><li><a href="MultiGetResult.html">MultiGetResult</a></li><li><a href="NoSQLDBError.html">NoSQLDBError</a></li><li><a href="Operation.html">Operation</a></li><li><a href="ParameterError.html">ParameterError</a></li><li><a href="ProxyConfiguration.html">ProxyConfiguration</a></li><li><a href="PutResult.html">PutResult</a></li><li><a href="Readable.html">Readable</a></li><li><a href="ReadOptions.html">ReadOptions</a></li><li><a href="ReplicaAckPolicy.html">ReplicaAckPolicy</a></li><li><a href="ReturnChoice.html">ReturnChoice</a></li><li><a href="ReturnKey.html">ReturnKey</a></li><li><a href="ReturnRow.html">ReturnRow</a></li><li><a href="Row.html">Row</a></li><li><a href="SimpleConsistency.html">SimpleConsistency</a></li><li><a href="StatementResult.html">StatementResult</a></li><li><a href="Store.html">Store</a></li><li><a href="StoreError.html">StoreError</a></li><li><a href="SyncPolicy.html">SyncPolicy</a></li><li><a href="TimeConsistency.html">TimeConsistency</a></li><li><a href="TimeToLive.html">TimeToLive</a></li><li><a href="UpdateResult.html">UpdateResult</a></li><li><a href="VerifyProperties.html">VerifyProperties</a></li><li><a href="Version.html">Version</a></li><li><a href="VersionConsistency.html">VersionConsistency</a></li><li><a href="WriteOptions.html">WriteOptions</a></li></ul><h3>Events</h3><ul><li><a href="Iterator.html#event:close">close</a></li><li><a href="Iterator.html#event:data">data</a></li><li><a href="Iterator.html#event:done">done</a></li><li><a href="Iterator.html#event:error">error</a></li><li><a href="Readable.html#event:data">data</a></li><li><a href="Readable.html#event:end">end</a></li><li><a href="Readable.html#event:error">error</a></li><li><a href="Store.html#event:close">close</a></li><li><a href="Store.html#event:error">error</a></li><li><a href="Store.html#event:open">open</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AuthenticationFailureException">AuthenticationFailureException</a></li><li><a href="global.html#AuthenticationRequiredException">AuthenticationRequiredException</a></li><li><a href="global.html#ConsistencyException">ConsistencyException</a></li><li><a href="global.html#DurabilityException">DurabilityException</a></li><li><a href="global.html#FaultException">FaultException</a></li><li><a href="global.html#IllegalArgumentException">IllegalArgumentException</a></li><li><a href="global.html#readConfiguration">readConfiguration</a></li><li><a href="global.html#RequestLimitException">RequestLimitException</a></li><li><a href="global.html#RequestTimeoutException">RequestTimeoutException</a></li><li><a href="global.html#startProxy">startProxy</a></li><li><a href="global.html#stopProxy">stopProxy</a></li><li><a href="global.html#TableOpExecutionException">TableOpExecutionException</a></li><li><a href="global.html#TimeUnit">TimeUnit</a></li><li><a href="global.html#UnauthorizedException">UnauthorizedException</a></li><li><a href="global.html#UnknownException">UnknownException</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a> on Thu Aug 01 2019 14:19:18 GMT+0530 (India Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

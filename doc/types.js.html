@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: types.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: types.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*-
+ *
+ *  This file is part of Oracle NoSQL Database
+ *  Copyright (C) 2014, 2018 Oracle and/or its affiliates.  All rights reserved.
+ *
+ * If you have received this file as part of Oracle NoSQL Database the
+ * following applies to the work as a whole:
+ *
+ *   Oracle NoSQL Database server software is free software: you can
+ *   redistribute it and/or modify it under the terms of the GNU Affero
+ *   General Public License as published by the Free Software Foundation,
+ *   version 3.
+ *
+ *   Oracle NoSQL Database is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without 4n the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *   Affero General Public License for more details.
+ *
+ * If you have received this file as part of Oracle NoSQL Database Client or
+ * distributed separately the following applies:
+ *
+ *   Oracle NoSQL Database client software is free software: you can
+ *   redistribute it and/or modify it under the terms of the Apache License
+ *   as published by the Apache Software Foundation, version 2.0.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * and/or the Apache License in the LICENSE file along with Oracle NoSQL
+ * Database client or server distribution.  If not, see
+ * &lt;http://www.gnu.org/licenses/>
+ * or
+ * &lt;http://www.apache.org/licenses/LICENSE-2.0>.
+ *
+ * An active Oracle commercial licensing agreement for this product supersedes
+ * these licenses and in such case the license notices, but not the copyright
+ * notice, may be removed by you in connection with your distribution that is
+ * in accordance with the commercial licensing terms.
+ *
+ * For more information please contact:
+ *
+ * berkeleydb-info_us@oracle.com
+ *
+ */
+'use strict';
+
+/*global Logger*/
+/*global Errors*/
+/*global util*/
+
+var Stringify = require('./stringify');
+var Parse = require('./parse');
+var ttypes = require('./thrift/ondb_types');
+
+/**
+ * A replicated environment makes it possible to increase the application's
+ * transaction commit guarantees by committing changes to its replicas on the
+ * network. ReplicaAckPolicy defines the policy for how such network commits
+ * are handled.
+ * @class ReplicaAckPolicy
+ * @property {Number} ALL All replicas must acknowledge that they have
+ *   committed the transaction.
+ * @property {Number} NONE No transaction commit acknowledgments are required
+ *   and the master will never wait for replica acknowledgments.
+ * @property {Number} SIMPLE_MAJORITY A simple majority of replicas must
+ *   acknowledge that they have committed the transaction.
+ * @enum {Number}
+ */
+var ReplicaAckPolicy = {
+  ALL : ttypes.TReplicaAckPolicy.ALL,
+  NONE : ttypes.TReplicaAckPolicy.NONE,
+  SIMPLE_MAJORITY : ttypes.TReplicaAckPolicy.SIMPLE_MAJORITY
+};
+exports.ReplicaAckPolicy = ReplicaAckPolicy;
+
+/**
+ * Defines the synchronization policy to be used when committing a transaction.
+ * High levels of synchronization offer a greater guarantee that the
+ * transaction is persistent to disk, but the tradeoff is lower performance.
+ * @class SyncPolicy
+ * @property {Number} NO_SYNC Do not write or synchronously flush the log on
+ *   transaction commit.
+ * @property {Number} SYNC Write and synchronously flush the log on transaction
+ *   commit.
+ * @property {Number} WRITE_NO_SYNC Write but do not synchronously flush the
+ *   log on transaction commit.
+ * @enum {Number}
+ */
+var SyncPolicy = {
+  NO_SYNC : ttypes.TSyncPolicy.NO_SYNC,
+  SYNC : ttypes.TSyncPolicy.SYNC,
+  WRITE_NO_SYNC : ttypes.TSyncPolicy.WRITE_NO_SYNC
+};
+exports.SyncPolicy = SyncPolicy;
+
+/**
+ * Used to provide consistency guarantees for read operations.
+ * In general, read operations may be serviced either at a Master or Replica
+ * node. When serviced at the Master node, consistency is always absolute. If
+ * absolute consistency is required, ABSOLUTE may be specified to force the
+ * operation to be serviced at the Master. For other types of consistency, when
+ * the operation is serviced at a Replica node, the transaction will not begin
+ * until the consistency policy is satisfied. The Consistency is specified as
+ * an argument to all read operations, for example, get.
+ * @class SimpleConsistency
+ * @object SimpleConsistency
+ * @property {Number} ABSOLUTE A consistency policy that requires that a
+ *   transaction be serviced on the Master so that consistency is absolute.
+ * @property {Number} NONE_REQUIRED A consistency policy that lets a
+ *   transaction on a replica using this policy proceed regardless of the state
+ *   of the Replica relative to the Master.
+ * @property {Number} NONE_REQUIRED_NO_MASTER A consistency policy that
+ *   requires that a read operation be serviced on a replica; never the Master.
+ * @enum {Number}
+ */
+
+var SimpleConsistency = {
+  ABSOLUTE : ttypes.TSimpleConsistency.ABSOLUTE,
+  NONE_REQUIRED : ttypes.TSimpleConsistency.NONE_REQUIRED,
+  NONE_REQUIRED_NO_MASTER : ttypes.TSimpleConsistency.NONE_REQUIRED_NO_MASTER
+};
+exports.SimpleConsistency = SimpleConsistency;
+
+/**
+ * A time unit in HOURS or DAYS
+ * 
+ * @property {Number} HOURS
+ * @property {Number} DAYS
+ * @enum {Number}
+ * 
+ */
+var TimeUnit = {
+    HOURS : ttypes.TTimeUnit.HOURS,
+    DAYS  : ttypes.TTimeUnit.DAYS
+};
+exports.TimeUnit = TimeUnit;
+
+/**
+ * A consistency policy which describes the amount of time the Replica is
+ * allowed to lag the Master. The application can use this policy to ensure
+ * that the Replica node sees all transactions that were committed on the
+ * Master before the lag interval.
+ * Effective use of this policy requires that the clocks on the Master and
+ * Replica are synchronized by using a protocol like NTP.
+ * @class TimeConsistency
+ * @param {Number} permissibleLag The time interval by which the Replica may be out of
+ *   date with respect to the Master when a transaction is initiated on the
+ *   Replica.
+ * @param {Number} timeoutMs the amount of time to wait for the consistency to be
+ *   reached.
+ * @constructor
+ */
+function TimeConsistency(/*Number*/  permissibleLag, /*Number*/ timeoutMs) {
+  ttypes.TTimeConsistency.call(this);
+  if (permissibleLag !== null)
+    this.permissibleLag = permissibleLag;
+  if (timeoutMs !== null)
+    this.timeoutMs = timeoutMs;
+}
+util.inherits(TimeConsistency, ttypes.TTimeConsistency);
+exports.TimeConsistency = TimeConsistency;
+
+/**
+ * A consistency policy which ensures that the environment on a Replica node
+ * is at least as current as denoted by the specified Key-Value pair Version.
+ * The version of a Key-Value pair represents a point in the serialized
+ * transaction schedule created by the master. In other words, the version is
+ * like a bookmark, representing a particular transaction commit in the
+ * replication stream. The Replica ensures that the commit identified by the
+ * Version has been executed before allowing the transaction on the Replica to
+ * proceed.
+ * @class VersionConsistency
+ * @param {Version} version The token identifying the transaction.
+ * @param {Number} timeoutMs The maximum amount of time that the transaction
+ *   start will wait to allow the Replica to catch up.
+ * @constructor
+ */
+function VersionConsistency(/*Version*/ version, /*Number*/ timeoutMs) {
+  ttypes.TVersionConsistency.call(this);
+  if (version != null)
+    if (version.id !== undefined)
+      this.version = version.id;
+    else
+      throw new Errors.ParameterError('version', 'Should be a valid version');
+
+  this.timeoutMs = timeoutMs;
+}
+util.inherits(VersionConsistency, ttypes.TVersionConsistency);
+exports.VersionConsistency = VersionConsistency;
+
+/**
+ * Used to provide consistency guarantees for read operations.
+ * In general, read operations may be serviced either at a Master or Replica
+ * node. When serviced at the Master node, consistency is always absolute. If
+ * absolute consistency is required, ABSOLUTE may be specified to force the
+ * operation to be serviced at the Master. For other types of consistency, when
+ * the operation is serviced at a Replica node, the transaction will not begin
+ * until the consistency policy is satisfied.
+ * @class Consistency
+ * @param {SimpleConsistency|TimeConsistency|VersionConsistency} consistency A
+ *   predefined consistency object.
+ * @constructor
+ */
+function Consistency(/*Object*/ consistency) {
+  ttypes.TConsistency.call(this);
+  if ((consistency === ttypes.TSimpleConsistency.ABSOLUTE) ||
+      (consistency === ttypes.TSimpleConsistency.NONE_REQUIRED) ||
+      (consistency === ttypes.TSimpleConsistency.NONE_REQUIRED_NO_MASTER))
+    this.simple = consistency;
+  else if (consistency instanceof TimeConsistency)
+    this.time = consistency;
+  else if (consistency instanceof VersionConsistency) {
+    this.version = consistency;
+  } else {
+    throw new Errors.ParameterError('consistency',
+      'Error constructing Consistency object, this object must' +
+      ' be build using one of the types: SimpleConsistency, TimeConsistency' +
+      ' or VersionConsistency ');
+  }
+}
+util.inherits(Consistency, ttypes.TConsistency);
+exports.Consistency = Consistency;
+
+/**
+ * ReadOptions is passed to read-only store operations to specify arguments
+ * that control non-default behavior related to consistency and operation
+ * timeouts.
+ * @class ReadOptions
+ * @property {Consistency} consistency Used to provide consistency guarantees
+ *   for read operations.
+ * @property {Number} timeoutMs Is the upper bound on the time interval for
+ *   processing the operation.
+ * @constructor
+ * @returns {ReadOptions}
+ */
+function ReadOptions(/*Consistency*/ consistency,
+                     /*Number*/ timeoutMs) {
+  ttypes.TReadOptions.call(this);
+  if (consistency !== null) {
+    if ((consistency === SimpleConsistency.ABSOLUTE) ||
+      (consistency === SimpleConsistency.NONE_REQUIRED) ||
+      (consistency === SimpleConsistency.NONE_REQUIRED_NO_MASTER) ||
+      (consistency instanceof TimeConsistency) ||
+      (consistency instanceof VersionConsistency))
+      this.consistency = new Consistency(consistency);
+    else if (consistency instanceof Consistency)
+      this.consistency = consistency;
+    else
+      throw new Errors.ParameterError('consistency',
+        'Error constructing ReadOptions object, this object must' +
+        ' be build using a valid Consistency Object');
+  }
+  if (timeoutMs !== null)
+    this.timeoutMs = timeoutMs;
+}
+util.inherits(ReadOptions, ttypes.TReadOptions);
+exports.ReadOptions = ReadOptions;
+
+/**
+ * Defines the durability characteristics associated with a standalone write
+ * (put or update) operation, or in the case of KVStore.execute with a set of
+ * operations performed in a single transaction. The overall durability is a
+ * function of the SyncPolicy and ReplicaAckPolicy in effect for the Master,
+ * and the Durability.SyncPolicy in effect for each Replica.
+ * @class Durability
+ * @property {SyncPolicy} masterSync The transaction synchronization policy to
+ *   be used on the Master when committing a transaction.
+ * @property {ReplicaAckPolicy} replicaAck The replica acknowledgment policy
+ *   used by the master when committing changes to a replicated environment.
+ * @property {SyncPolicy} replicaSync The transaction synchronization policy to
+ *   be used by the replica as it replays a transaction that needs an
+ *   acknowledgment.
+ * @returns {Durability}
+ * @constructor
+ */
+function Durability(/*SyncPolicy*/ masterSync,
+                    /*ReplicaAckPolicy*/ replicaAck,
+                    /*SyncPolicy*/ replicaSync) {
+  ttypes.TDurability.call(this);
+  if (masterSync !== null)
+    this.masterSync = masterSync;
+  if (replicaAck !== null)
+    this.replicaAck = replicaAck;
+  if (replicaSync !== null)
+    this.replicaSync = replicaSync;
+}
+util.inherits(Durability, ttypes.TDurability);
+exports.Durability = Durability;
+
+/**
+ * Specifies whether to return the row value, version, both or neither.
+ * For best performance, it is important to choose only the properties that are
+ * required. The store is optimized to avoid I/O when the requested properties
+ * are in cache.
+ * @class ReturnChoice
+ * @property {Number} ALL Return both the value and the version.
+ * @property {Number} NONE Do not return the value or the version.
+ * @property {Number} VALUE Return the value only.
+ * @property {Number} VERSION Return the version only.
+ * @enum {Number}
+ */
+var ReturnChoice = {
+  ALL : ttypes.TReturnChoice.ALL,
+  NONE : ttypes.TReturnChoice.NONE,
+  VALUE : ttypes.TReturnChoice.ONLY_VALUE,
+  VERSION : ttypes.TReturnChoice.ONLY_VERSION
+};
+exports.ReturnChoice = ReturnChoice;
+
+/**
+ * WriteOptions is passed to store operations that can update the store to
+ * specify non-default behavior relating to operation durability and timeouts.
+ * @class WriteOptions
+ * @property {Durability} durability Defines the durability characteristics
+ *   associated with a standalone write (put or update) operation
+ * @property {ReturnChoice} returnChoice Specifies whether to return the row
+ *   value, version, both or neither.
+ * @property {Number} timeoutMs The upper bound on the time interval for
+ *   processing the operation.
+ * @returns {WriteOptions}
+ * @constructor
+ */
+
+function WriteOptions(/*Durability*/ durability,
+                      /*Number*/ timeoutMs,
+                      /*ReturnChoice*/ returnChoice,
+                      /*boolean*/ updateTTL) {
+  ttypes.TWriteOptions.call(this);
+  if (durability !== null)
+    this.durability = durability;
+  if (timeoutMs !== null)
+    this.timeoutMs = timeoutMs;
+  if (returnChoice !== null)
+    this.returnChoice = returnChoice;
+  if (updateTTL !== null)
+    this.updateTTL = updateTTL;
+}
+util.inherits(WriteOptions, ttypes.TWriteOptions);
+exports.WriteOptions = WriteOptions;
+
+/**
+ * @param value a duration value
+ * @param unit a unit of times either HOURS or DAYS
+ * @return {TimeToLive}
+ * @constructor
+ */
+function TimeToLive(value, unit) {
+    ttypes.TTimeToLive.call(this);
+    this.value = value;
+    if (value &lt; 0) 
+        throw new Errors.ParameterError('TTL duration ',  'duration ' + 
+                unit + ' is invalid. Duration must be positive integer');
+    if (unit == TimeUnit.HOURS
+     || unit == TimeUnit.DAYS)
+        this.timeUnit = unit;
+    else
+        throw new Errors.ParameterError('TTL time unit ',  'unit value ' + 
+                unit + ' is invalid. Allowed units are ' 
+                + 'HOURS(=1) or DAYS(=2)');
+    this.timeUnit = unit;
+}
+util.inherits(TimeToLive, ttypes.TTimeToLive);
+exports.TimeToLive = TimeToLive;
+
+/**
+ * FieldRange defines a range of values to be used in a table or index
+ * iteration or multiGet operation. A FieldRange is used as the least
+ * significant component in a partially specified PrimaryKey or IndexKey in
+ * order to create a value range for an operation that returns multiple rows or
+ * keys. The data types supported by FieldRange are limited to those which are
+ * valid for primary keys and/or index keys.
+ * @class FieldRange
+ * @property {String} fieldName The name for the field used in the range.
+ * @property {Object} startValue Sets the start value of the range to the
+ *   specified value.
+ * @property {bool} startIsInclusive Set to true if the range is inclusive of
+ *   the value, false if it is exclusive.
+ * @property {Object} endValue Sets the end value of the range to the specified
+ *   value.
+ * @property {bool} endIsInclusive  Set to true if the range is inclusive of
+ *   the value, false if it is exclusive.
+ * @returns {FieldRange}
+ * @constructor
+ */
+function FieldRange(/*String*/ fieldName,
+                    /*Object*/ startValue,
+                    /*bool*/ startIsInclusive,
+                    /*Object*/ endValue,
+                    /*bool*/ endIsInclusive) {
+  ttypes.TFieldRange.call(this);
+  if (fieldName !== null)
+    this.fieldName = fieldName;
+  if (startValue !== null)
+    this.startValue = '' + startValue;
+  if (startIsInclusive !== null)
+    this.startIsInclusive = startIsInclusive;
+  if (endValue !== null)
+    this.endValue = '' + endValue;
+  if (endIsInclusive !== null)
+    this.endIsInclusive = endIsInclusive;
+}
+util.inherits(FieldRange, ttypes.TFieldRange);
+exports.FieldRange = FieldRange;
+
+var Direction = {
+  FORWARD : ttypes.TDirection.FORWARD,
+  REVERSE : ttypes.TDirection.REVERSE,
+  UNORDERED : ttypes.TDirection.UNORDERED
+};
+exports.Direction = Direction;
+
+var OperationType = {
+  DELETE : ttypes.TOperationType.DELETE,
+  DELETE_IF_VERSION : ttypes.TOperationType.DELETE_IF_VERSION,
+  PUT : ttypes.TOperationType.PUT,
+  PUT_IF_ABSENT : ttypes.TOperationType.PUT_IF_ABSENT,
+  PUT_IF_PRESENT : ttypes.TOperationType.PUT_IF_PRESENT,
+  PUT_IF_VERSION : ttypes.TOperationType.PUT_IF_VERSION
+};
+exports.OperationType = OperationType;
+
+/**
+ * Defines an update operation to be passed to Store.executeOperations().
+ * @class Operation
+ * @property {String} tableName The table name on which this operation is
+ *   executed on.
+ * @property {OperationType} type Determines which update operation to be
+ *   executed.
+ * @property {Row} row For put operations it represents the row to be stored.
+ * For delete operations it represents the key of the row to be deleted.
+ * @property {ReturnChoice} returnChoice Specifies whether to return the row
+ *   value, version, both or neither.
+ * @property {bool} abortIfUnsuccessful If true, this operation should cause the
+ *   execute transaction to abort when the operation fails, where failure is
+ *   the condition when the delete or put method returns null.
+ * @property {Version} [matchVersion] The version to be matched for:
+ *  PUT_IF_VERSION or DELETE_IF_VERSION.
+ * @constructor
+ */
+
+function Operation(/*String*/ tableName,
+                   /*OperationType*/ type,
+                   /*Row*/ row,
+                   /*ReturnChoice*/ returnChoice,
+                   /*bool*/ abortIfUnsuccessful,
+                   /*Version*/ matchVersion) {
+  ttypes.TOperation.call(this);
+  if (tableName !== null)
+    this.tableName = tableName;
+  if (type !== null)
+      this.type = type;
+  if (row !== null)
+    this.row = row;
+  if (returnChoice !== null)
+    this.returnChoice = returnChoice;
+  if (abortIfUnsuccessful !== null)
+    this.abortIfUnsuccessful = abortIfUnsuccessful;
+  if (matchVersion !== null)
+    this.matchVersion = matchVersion;
+
+  if ((type === OperationType.PUT_IF_VERSION) ||
+    (type === OperationType.DELETE_IF_VERSION))
+    if (! (matchVersion instanceof Version))
+      Logger.warn('The operation contains an invalid Version.');
+
+}
+util.inherits(Operation, ttypes.TOperation);
+exports.Operation = Operation;
+
+
+
+/* ****
+ * ****  RESULT STRUCTURES
+ * ****
+ */
+
+/**
+ * @class ExecutionId
+ * This object contains data associated to the id of a plan from an execute
+ * operation.
+ */
+function ExecutionId (/*Buffer*/ executionId) {
+  this.executionId = null;
+  if (executionId !== undefined)
+    if (executionId !== null)
+      this.executionId = executionId;
+}
+exports.ExecutionId = ExecutionId;
+
+/**
+ * @class Version
+ * This object contains data associated to the version of a row.
+ */
+function Version (/*Buffer*/ version) {
+  this.id = null;
+  if (version !== undefined)
+    if (version)
+      this.id = version;
+}
+exports.Version = Version;
+
+/**
+ * @class GetResult
+ * The result of a GET operation
+ * @property {Row} currentRow The result row of the operation.
+ * @property {Version} currentRowVersion The version object for the row.
+ * @property {long} expirationTime UTC expiration time of the row.
+ */
+function GetResult(/*TGetResult*/ args) {
+  this.currentRow = null;
+  this.currentRowVersion = null;
+  if (args) {
+
+    if (args.currentRow !== undefined)
+      if (args.currentRow)
+        this.currentRow = Parse(args.currentRow.jsonRow);
+
+    if (args.currentRowVersion !== undefined)
+      if (args.currentRowVersion)
+        this.currentRowVersion = new Version(args.currentRowVersion);
+    
+    if (args.expiration !== undefined)
+      if (args.expiration)
+        this.expirationTime = args.expiration;
+  }
+}
+exports.GetResult = GetResult;
+
+/**
+ * @class Row
+ * A row is an object with data from a table in the form:
+ * { field: value, field: value....}
+ */
+function Row() {}
+
+
+/**
+ * @class
+ * This object contains a row result with metadata associated to the result.
+ * @property {Row} row The result row.
+ * @property {String} table The table name from the the row.
+ * @property {Version} version An object that represents the row version.
+ * @property {long} expirationTime UTC expiration time of the row.
+ *
+ */
+function ReturnRow( /*TRowWithMetadata*/ args,
+                    /*TIdToTableNames*/ idToTableNames) {
+  this.row = null;
+  this.table = null;
+  this.version = null;
+
+  if ((args.tableId !== undefined) &amp;&amp; (idToTableNames !== undefined))
+    if (args.tableId)
+      if (idToTableNames[args.tableId])
+       this.table = idToTableNames[args.tableId];
+
+  if (args.rowVersion !== undefined)
+    if (args.rowVersion)
+      this.version = new Version(args.rowVersion);
+
+  if (args) {
+    if (args.jsonRow !== undefined)
+      if (args.jsonRow)
+        this.row = Parse(args.jsonRow);
+    
+    if (args.expiration !== undefined) 
+      if (args.expiration)
+        this.expirationTime = args.expiration;
+      
+  }
+}
+
+/**
+ * This object contains an array with all row results from a call to a
+ * multi* method.
+ * @property {Array} returnRows The array with the rows.
+ * @class
+ */
+function MultiGetResult(/*TMultiGetResult*/ args) {
+  this.returnRows = null;
+
+  if (args) {
+    if (args.rowsWithMetadata !== undefined)
+      if (args.rowsWithMetadata) {
+        this.returnRows = [];
+
+        for (var index = 0; index &lt; args.rowsWithMetadata.length; index++)
+          this.returnRows.push(
+            new ReturnRow(
+              args.rowsWithMetadata[index],
+              args.idToTableNames));
+      }
+  }
+}
+exports.MultiGetResult = MultiGetResult;
+
+
+/**
+ * @class
+ * This object contains a primary key result with metadata associated to the
+ * result.
+ * @property {Row} key The result primary key.
+ * @property {String} table The table name for the key.
+ * @property {Version} version An object that represents the row version.
+ * @property {long} expirationTime UTC expiration time of the  primary key.
+ *
+ */
+function ReturnKey( /*TRowWithMetadata*/ args,
+                    /*TIdToTableNames*/ idToTableNames) {
+  this.key = null;
+  this.table = null;
+  this.version = null;
+  if (args) {
+    if (args.jsonRow !== undefined)
+      if (args.jsonRow)
+        this.key = Parse(args.jsonRow);
+
+    if ((args.tableId !== undefined) &amp;&amp; (idToTableNames !== undefined))
+      if (args.tableId)
+        if (idToTableNames[args.tableId])
+          this.table = idToTableNames[args.tableId];
+
+    if (args.rowVersion !== undefined)
+      if (args.rowVersion)
+        this.version = new Version(args.rowVersion);
+
+    if (args.expiration !== undefined) 
+        if (args.expiration)
+          this.expirationTime = args.expiration;
+  }
+}
+
+/**
+ * @class
+ * This object contains a KeyPair result with metadata associated with the
+ * result. This is the result of a key-only iteration over an index using
+ * Store.indexKeyIterator. It contains the primary key for the row as well as
+ * the index key for the index entry returned. The primary key is accessed using
+ * the primary property and the index key is accessed using the secondary
+ * property.
+ *
+ * @property {Row} keypair A container for the primary and secondary keys.
+ * @property {Row} primary The primary key of the result.
+ * @property {Row} secondary The index, or secondary key of the result.
+ * @property {String} table The table name from the the pair, if available.
+ */
+function KeyPair( /*TRowWithMetadata*/ args,
+                  /*TIdToTableNames*/ idToTableNames) {
+  this.primary = null;
+  this.secondary = null;
+  this.table = null;
+  this.keypair = null;
+  if (args) {
+    if (args.jsonRow !== undefined) {
+      if (args.jsonRow) {
+        this.keypair = Parse(args.jsonRow);
+        this.primary = this.keypair.primary;
+        this.secondary = this.keypair.secondary;
+      }
+    } else if (args.primary !== undefined) {
+        this.keypair = args;
+        this.primary = args.primary;
+        this.secondary = args.secondary;
+    }
+
+    if ((args.tableId !== undefined) &amp;&amp; (idToTableNames !== undefined))
+      if (args.tableId)
+        if (idToTableNames[args.tableId])
+          this.table = idToTableNames[args.tableId];
+
+    if (args.rowVersion !== undefined)
+      if (args.rowVersion)
+        this.version = new Version(args.rowVersion);
+  }
+}
+exports.KeyPair = KeyPair;
+
+/**
+ * This object contains an array with all row results from a call to a
+ * multiGetKeys method.
+ * @property {Array} returnRows The array with the keys.
+ * @class
+ */
+function MultiGetKeyResult(/*TMultiGetResult*/ args) {
+  this.returnRows = null;
+  if (args)
+    if (args.rowsWithMetadata !== undefined)
+      if (args.rowsWithMetadata) {
+        this.returnRows = [];
+
+        for (var index = 0; index &lt; args.rowsWithMetadata.length; index++)
+          this.returnRows.push(
+            new ReturnKey(
+              args.rowsWithMetadata[index],
+              args.idToTableNames));
+
+      }
+}
+exports.MultiGetKeyResult = MultiGetKeyResult;
+
+/**
+ * This object contains an array of KeyPair results from a call to a
+ * indexKeyIterator method.
+ * @property {Array} returnRows The array with the KeyPairs.
+ * @class
+ */
+function KeyPairResult(/*TMultiGetResult|TRowAndMetadata*/ args) {
+  this.returnRows = null;
+  if (args)
+    if (args.rowsWithMetadata !== undefined)
+      if (args.rowsWithMetadata) {
+        this.returnRows = [];
+
+        for (var index = 0; index &lt; args.rowsWithMetadata.length; index++)
+          this.returnRows.push(
+            new KeyPair(
+              args.rowsWithMetadata[index],
+              args.idToTableNames));
+
+      }
+}
+exports.KeyPairResult = KeyPairResult;
+
+/**
+ * This object contains the result of a PUT operation.
+ * @property {Version} currentRowVersion The current version of the row.
+ * @property {Row} previousRow The previous row.
+ * @property {Version} previousRowVersion The previous version of the row.
+ * @property {long} expirationTime UTC expiration time of the row.
+ * @class
+ */
+function PutResult (/*TWriteResult*/ args) {
+  this.currentRowVersion = null;
+  this.previousRow = null;
+  this.previousRowVersion = null;
+  
+  if (args) {
+
+    if (args.currentRowVersion !== undefined)
+      if (args.currentRowVersion)
+        this.currentRowVersion = new Version(args.currentRowVersion);
+
+    if (args.previousRow !== undefined)
+      if (args.previousRow) 
+        this.previousRow = Parse(args.previousRow.jsonRow);
+
+    if (args.previousRowVersion !== undefined)
+      if (args.previousRowVersion)
+        this.previousRowVersion = new Version(args.previousRowVersion);
+
+    if (args.expiration !== undefined)
+      if (args.expiration) 
+        this.expirationTime = args.expiration;
+  }
+}
+exports.PutResult = PutResult;
+
+/**
+ * This object contains the result of a DELETE operation.
+ * @property {Row} previousRow The previous row.
+ * @property {Version} previousRowVersion The previous version of the row.
+ * @property {bool} wasDeleted True if the row was deleted.
+ * @property {long} expirationTime UTC expiration time of the row.
+ * @class
+ */
+function DeleteResult(args) {
+  this.previousRow = null;
+  this.previousRowVersion = null;
+  this.wasDeleted = null;
+  if (args) {
+
+    if (args.previousRow !== undefined)
+      if (args.previousRow)
+        this.previousRow = Parse(args.previousRow.jsonRow);
+
+    if (args.previousRowVersion !== undefined)
+      if (args.previousRowVersion)
+        this.previousRowVersion = new Version(args.previousRowVersion);
+
+    if (args.wasDeleted !== undefined)
+      if (args.wasDeleted !== null)
+        this.wasDeleted = args.wasDeleted;
+
+    if (args.expiration !== undefined)
+        if (args.expiration)
+          this.expirationTime = args.expiration;
+
+  }
+}
+exports.DeleteResult = DeleteResult;
+
+/**
+ * This object contains information about an executeUpdate process.
+ * @property {Version} currentRowVersion The current version of the row.
+ * @property {Row} previousRow The previous row.
+ * @property {Version} previousRowVersion The previous version of the row.
+ * @property {bool} wasDeleted True if the row was deleted.
+ * @property {long} expirationTime UTC expiration time of the previous row.
+ * @class
+ */
+function UpdateResult(args) {
+  this.currentRowVersion = null;
+  this.previousRow = null;
+  this.previousRowVersion = null;
+  this.wasDeleted = null;
+  if (args) {
+    if (args.currentRowVersion !== undefined)
+      if (args.currentRowVersion)
+        this.currentRowVersion = new Version(args.currentRowVersion);
+
+    if (args.previousRow !== undefined)
+      if (args.previousRow)
+        this.previousRow = Parse(args.previousRow.jsonRow);
+
+    if (args.previousRowVersion !== undefined)
+      if (args.previousRowVersion)
+        this.previousRowVersion = new Version(args.previousRowVersion);
+
+    if (args.wasDeleted !== undefined)
+      if (args.wasDeleted !== null)
+        this.wasDeleted = args.wasDeleted;
+
+    if (args.expiration !== undefined)
+        if (args.expiration)
+          this.expirationTime = args.expiration;
+
+  }
+}
+exports.UpdateResult = UpdateResult;
+
+/**
+ * This object contains information about an execute, executeBackground,
+ * executeStatus or executeCancel process.
+ * @class
+ * @property {Number} planId The plan id number internally used to
+ * identify the operation.
+ * @property {ExecutionId} executionId The execution id internally used to
+ * describe the operation.
+ * @property {String} info Detailed information about the status of the command
+ * execution in human readable form.
+ * @property {String} infoExtended Detailed information about the status of the
+ * command execution in a manipulable object.
+ * @property {bool} isSuccessful True if this statement has finished and was
+ * successful.
+ * @property {String} errorMessage If the operation failed, and isSuccessful
+ * is false, errorMsg will return a description of the problem.
+ * @property {bool} isCancelled True if the operation was cancelled.
+ * Not set by execute method.
+ * @property {bool} true If the operation has been terminated. Always true for
+ * execute method.
+ */
+function StatementResult(/*TStatementResultV2*/ args) {
+  this.planId = null;
+  this.executionId = null;
+  this.info = null;
+  this.infoExtended = null;
+  this.isSuccessful = null;
+  this.errorMessage = null;
+  this.isCancelled = null;
+  this.isDone = null;
+  this.statement = null;
+  this.result = null;
+  if (args) {
+    if (args.planId !== undefined)
+      this.planId = args.planId;
+
+    if (args.executionId !== undefined)
+      this.executionId = new ExecutionId(args.executionId);
+
+    if (args.info !== undefined)
+      this.info = args.info;
+
+    if (args.infoAsJson !== undefined)
+      this.infoExtended = Parse(args.infoAsJson);
+
+    if (args.isSuccessful !== undefined)
+      this.isSuccessful = args.isSuccessful;
+
+    if (args.errorMessage !== undefined)
+      this.errorMessage = args.errorMessage;
+
+    if (args.isCancelled !== undefined)
+      this.isCancelled = args.isCancelled;
+
+    if (args.isDone !== undefined)
+      this.isDone = args.isDone;
+
+    if (args.statement !== undefined)
+      this.statement = args.statement;
+
+    if (args.result !== undefined &amp;&amp; args.result !== null)
+      if (args.result.stringResult !== undefined) // from TResult
+        this.result = args.result.stringResult;
+
+  }
+}
+exports.StatementResult = StatementResult;
+
+/**
+ *@class
+ * This object provides information about the background execution process
+ * created by executeBackground object.
+ * This object can be created using the executionId from other source, i.e.
+ *
+ * var otherFuture= new ExecutionFuture(otherExecutionId);
+ *
+ * @property {ExecutionId} executionId The execution id internally used to
+ * describe the operation.
+ * @property {StatementResult} statementResult The last known statement result.
+ */
+function ExecutionFuture(/*TStatementResultV2*/ args,
+                         /*Store*/ store) {
+  this.store = null;
+  this.executionId = null;
+  this.statementResult = null;
+  if (args) {
+    this.executionId = new ExecutionId(args.executionId);
+    this.statementResult = new StatementResult(args);
+  }
+  if (store)
+    this.store = store;
+}
+exports.ExecutionFuture = ExecutionFuture;
+
+/**
+ * Returns information about the execution of the statement. If the
+ * statement is still executing, this call will result in communication
+ * with the kvstore server to obtain up to date status, and the status
+ * returned will reflect interim information.
+ * @param {updateStatusCallback} [callback] A function that is called with
+ * information about the process.
+ */
+ExecutionFuture.prototype.updateStatus =
+  function updateStatus( /*updateStatusCallback*/ callback ) {
+  var self = this;
+
+  callback = callback || function () {};
+  self.store.checkIsConnected();
+  if ((self.statementResult.isDone == true) ||
+      (self.statementResult.isCancelled == true))
+    callback(null, self);
+  else
+    self.store.thriftClient.executionFutureUpdateStatusV2(
+      self.executionId.executionId,
+      function (err, result) {
+        if (err) {
+          var error = Errors.getProxyError(err, 'ExecutionFuture.getStatus()');
+          self.store.reportError(error, callback);
+        } else {
+          self.statementResult = new StatementResult(result);
+          callback(null, this);
+        }
+      })
+
+};
+
+/**
+ * @callback updateStatusCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {ExecutionFuture} result A statementResult object with information
+ *  about the process.
+ */
+
+/**
+ * Attempts to cancel execution of this statement. Returns false if
+ * the statement could not be cancelled, possibly because it has already
+ * finished. If the statement has not succeeded already, and can be stopped,
+ * the operation will transition to the FAILED state.
+ *
+ * @param {bool} [mayInterrupt] Option that allows to interrupt the execution.
+ * @param {cancelCallback} [callback] A function that is called when
+ * the process is cancelled or the cancellation process failed.
+ */
+ExecutionFuture.prototype.cancel =
+  function cancel(/*bool*/ mayInterrupt,
+                  /*cancelCallback*/ callback) {
+  var self = this;
+
+  if (typeof mayInterrupt == 'function') {
+    callback = mayInterrupt;
+    mayInterrupt = true;
+  }
+  callback = callback || function () {};
+
+  self.store.checkIsConnected();
+    if ((self.statementResult.isDone == true) ||
+        (self.statementResult.isCancelled == true))
+    callback(null, self);
+  else
+    self.store.thriftClient.executionFutureCancelV2(
+      self.executionId.executionId,
+      mayInterrupt,
+      function (err, result) {
+        if (err) {
+          var error = Errors.getProxyError(err, 'ExecutionFuture.cancel()');
+          self.store.reportError(error, callback);
+        } else {
+          self.statementResult = new StatementResult(result);
+          callback(null, this);
+        }
+      })
+};
+/**
+ * @callback cancelCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {bool} result A flag indicating if the process could be canceled.
+ *
+ */
+
+/**
+ * This method call the method specified in the callback parameter until the
+ * command represented by the execution id completes. Returns information about
+ * the execution of the statement.
+ * @param {getCallback} [callback] A function that is called when
+ * the process is cancelled or the cancellation process failed.
+ */
+ExecutionFuture.prototype.get =
+  function get( /*getCallback*/ callback) {
+  var self = this;
+
+  callback = callback || function () {};
+
+  self.store.checkIsConnected();
+
+    if ((self.statementResult.isDone == true) ||
+        (self.statementResult.isCancelled == true))
+    callback(null, self);
+  else
+    self.store.thriftClient.executionFutureGetV2(
+      self.executionId.executionId,
+      function (err, result) {
+        if (err) {
+          var error = Errors.getProxyError(err, 'ExecutionFuture.get()');
+          self.store.reportError(error, callback);
+        } else {
+          self.statementResult = new StatementResult(result);
+          callback(null, this);
+        }
+      })
+};
+/**
+ * @callback getCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {ExecutionFuture} result A statementResult object with information
+ *  about the process.
+ */
+
+
+/**
+ * @class
+ * This object specify the module to be consulted by version() and status()
+ * methods.
+ * @property JS_CLIENT This javascript module.
+ * @property PROXY_SERVER The proxy server.
+ * @property JAVA_CLIENT The current java version used.
+ */
+var ModuleInfo = {
+  JS_DRIVER: 1,
+  PROXY_SERVER : ttypes.TModuleInfo.PROXY_SERVER,
+  JAVA_CLIENT : ttypes.TModuleInfo.JAVA_CLIENT
+};
+exports.ModuleInfo = ModuleInfo;
+
+/**
+ * @class
+ *
+ */
+function VerifyProperties(args) {
+  ttypes.TVerifyProperties.call(this);
+  this.kvStoreName = null;
+  this.kvStoreHelperHosts = null;
+  this.username = null;
+  this.readZones = null;
+  this.driverProtocolVersion = null;
+  if (args) {
+    if (args.kvStoreName !== undefined) {
+      this.kvStoreName = args.kvStoreName;
+    }
+    if (args.kvStoreHelperHosts !== undefined) {
+      this.kvStoreHelperHosts = args.kvStoreHelperHosts;
+    }
+    if (args.username !== undefined) {
+      this.username = args.username;
+    }
+    if (args.readZones !== undefined) {
+      this.readZones = args.readZones;
+    }
+    if (args.driverProtocolVersion !== undefined) {
+      this.driverProtocolVersion = args.driverProtocolVersion;
+    }
+  }
+}
+util.inherits(VerifyProperties, ttypes.TVerifyProperties);
+exports.VerifyProperties = VerifyProperties;
+
+
+var VerifyError = {
+  INVALID_KVSTORE_Name :
+    ttypes.TVerifyError.INVALID_KVSTORE_Name,
+  INVALID_KVSTORE_HelperHosts :
+    ttypes.TVerifyError.INVALID_KVSTORE_HelperHosts,
+  Unsupported_Driver_ProtocolVersion :
+    ttypes.TVerifyError.Unsupported_Driver_ProtocolVersion
+};
+exports.VerifyError = VerifyError;
+
+function VerifyErrorDescription(/*VerifyError*/ value) {
+  switch (value) {
+    case VerifyError.INVALID_KVSTORE_Name:
+      return 'Invalid KVStore Name';
+    case VerifyError.INVALID_KVSTORE_HelperHosts :
+      return 'Invalid KVStore Helper Hosts';
+    case VerifyError.Unsupported_Driver_ProtocolVersion :
+      return 'Unsupported driver protocol version';
+  }
+}
+exports.VerifyErrorDescription = VerifyErrorDescription;
+
+
+
+/*
+ ********** HELPER
+ */
+function setGlobals() {
+  global.ReplicaAckPolicy = ReplicaAckPolicy;
+  global.SyncPolicy = SyncPolicy;
+  global.SimpleConsistency = SimpleConsistency;
+  global.TimeConsistency = TimeConsistency;
+  global.VersionConsistency = VersionConsistency;
+  global.Consistency = Consistency;
+  global.ReadOptions = ReadOptions;
+  global.Durability = Durability;
+  global.ReturnChoice = ReturnChoice;
+  global.WriteOptions = WriteOptions;
+  global.TimeToLive = TimeToLive;
+  global.FieldRange = FieldRange;
+  global.Direction = Direction;
+  global.OperationType = OperationType;
+  global.Operation = Operation;
+}
+exports.setGlobals = setGlobals;
+
+// Having configuration here too
+var Configuration = require ('./configuration').Configuration;
+exports.Configuration = Configuration;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Configuration.html">Configuration</a></li><li><a href="ConnectionError.html">ConnectionError</a></li><li><a href="Consistency.html">Consistency</a></li><li><a href="DeleteResult.html">DeleteResult</a></li><li><a href="Durability.html">Durability</a></li><li><a href="ExecutionFuture.html">ExecutionFuture</a></li><li><a href="ExecutionId.html">ExecutionId</a></li><li><a href="FieldRange.html">FieldRange</a></li><li><a href="GetResult.html">GetResult</a></li><li><a href="Iterator.html">Iterator</a></li><li><a href="IteratorError.html">IteratorError</a></li><li><a href="KeyPair.html">KeyPair</a></li><li><a href="KeyPairResult.html">KeyPairResult</a></li><li><a href="Logger.html">Logger</a></li><li><a href="ModuleInfo.html">ModuleInfo</a></li><li><a href="MultiGetKeyResult.html">MultiGetKeyResult</a></li><li><a href="MultiGetResult.html">MultiGetResult</a></li><li><a href="NoSQLDBError.html">NoSQLDBError</a></li><li><a href="Operation.html">Operation</a></li><li><a href="ParameterError.html">ParameterError</a></li><li><a href="ProxyConfiguration.html">ProxyConfiguration</a></li><li><a href="PutResult.html">PutResult</a></li><li><a href="Readable.html">Readable</a></li><li><a href="ReadOptions.html">ReadOptions</a></li><li><a href="ReplicaAckPolicy.html">ReplicaAckPolicy</a></li><li><a href="ReturnChoice.html">ReturnChoice</a></li><li><a href="ReturnKey.html">ReturnKey</a></li><li><a href="ReturnRow.html">ReturnRow</a></li><li><a href="Row.html">Row</a></li><li><a href="SimpleConsistency.html">SimpleConsistency</a></li><li><a href="StatementResult.html">StatementResult</a></li><li><a href="Store.html">Store</a></li><li><a href="StoreError.html">StoreError</a></li><li><a href="SyncPolicy.html">SyncPolicy</a></li><li><a href="TimeConsistency.html">TimeConsistency</a></li><li><a href="TimeToLive.html">TimeToLive</a></li><li><a href="UpdateResult.html">UpdateResult</a></li><li><a href="VerifyProperties.html">VerifyProperties</a></li><li><a href="Version.html">Version</a></li><li><a href="VersionConsistency.html">VersionConsistency</a></li><li><a href="WriteOptions.html">WriteOptions</a></li></ul><h3>Events</h3><ul><li><a href="Iterator.html#event:close">close</a></li><li><a href="Iterator.html#event:data">data</a></li><li><a href="Iterator.html#event:done">done</a></li><li><a href="Iterator.html#event:error">error</a></li><li><a href="Readable.html#event:data">data</a></li><li><a href="Readable.html#event:end">end</a></li><li><a href="Readable.html#event:error">error</a></li><li><a href="Store.html#event:close">close</a></li><li><a href="Store.html#event:error">error</a></li><li><a href="Store.html#event:open">open</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AuthenticationFailureException">AuthenticationFailureException</a></li><li><a href="global.html#AuthenticationRequiredException">AuthenticationRequiredException</a></li><li><a href="global.html#ConsistencyException">ConsistencyException</a></li><li><a href="global.html#DurabilityException">DurabilityException</a></li><li><a href="global.html#FaultException">FaultException</a></li><li><a href="global.html#IllegalArgumentException">IllegalArgumentException</a></li><li><a href="global.html#readConfiguration">readConfiguration</a></li><li><a href="global.html#RequestLimitException">RequestLimitException</a></li><li><a href="global.html#RequestTimeoutException">RequestTimeoutException</a></li><li><a href="global.html#startProxy">startProxy</a></li><li><a href="global.html#stopProxy">stopProxy</a></li><li><a href="global.html#TableOpExecutionException">TableOpExecutionException</a></li><li><a href="global.html#TimeUnit">TimeUnit</a></li><li><a href="global.html#UnauthorizedException">UnauthorizedException</a></li><li><a href="global.html#UnknownException">UnknownException</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a> on Thu Aug 01 2019 14:19:18 GMT+0530 (India Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

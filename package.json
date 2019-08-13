@@ -1,0 +1,28 @@
+{
+  "name": "nosqldb-oraclejs",
+  "version": "19.3.0",
+  "protocolVersion": "5",
+  "protocolSupported": ["5"],
+  "description": "Oracle NoSQL Database JS Driver",
+  "engines" : { "node" : ">=0.10.26" },
+  "keywords": [
+    "kvstore",
+    "nosql",
+    "nosqldb",
+    "db",
+    "sleepycat",
+    "berkeley",
+    "bigdata"
+  ],
+  "license": "Apache-2.0",
+  "author": "George Feinberg <george.feinberg@oracle.com>",
+  "main": "nosqldb",
+  "dependencies": {
+    "thrift": ">=0.11.0",
+    "node-int64": "~0.3.0"
+  },
+  "devDependencies": {
+    "mocha": ">1.6.3",
+    "jsdoc": "3.3.0"
+  }
+}

@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: store.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: store.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*-
+ *
+ *  This file is part of Oracle NoSQL Database
+ *  Copyright (C) 2014, 2018 Oracle and/or its affiliates.  All rights reserved.
+ *
+ * If you have received this file as part of Oracle NoSQL Database the
+ * following applies to the work as a whole:
+ *
+ *   Oracle NoSQL Database server software is free software: you can
+ *   redistribute it and/or modify it under the terms of the GNU Affero
+ *   General Public License as published by the Free Software Foundation,
+ *   version 3.
+ *
+ *   Oracle NoSQL Database is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *   Affero General Public License for more details.
+ *
+ * If you have received this file as part of Oracle NoSQL Database Client or
+ * distributed separately the following applies:
+ *
+ *   Oracle NoSQL Database client software is free software: you can
+ *   redistribute it and/or modify it under the terms of the Apache License
+ *   as published by the Apache Software Foundation, version 2.0.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * and/or the Apache License in the LICENSE file along with Oracle NoSQL
+ * Database client or server distribution.  If not, see
+ * &lt;http://www.gnu.org/licenses/>
+ * or
+ * &lt;http://www.apache.org/licenses/LICENSE-2.0>.
+ *
+ * An active Oracle commercial licensing agreement for this product supersedes
+ * these licenses and in such case the license notices, but not the copyright
+ * notice, may be removed by you in connection with your distribution that is
+ * in accordance with the commercial licensing terms.
+ *
+ * For more information please contact:
+ *
+ * berkeleydb-info_us@oracle.com
+ *
+ */
+'use strict';
+
+/*global thrift*/
+/*global Logger*/
+/*global LOG_LEVELS*/
+/*global Errors*/
+/*global Types*/
+/*global fs*/
+
+var EventEmitter = require('events').EventEmitter;
+var Proxy = require('./proxy');
+var Iterator = require('./iterator');
+var ONDBClient = require('./thrift/ONDB');
+var ttypes = require('./thrift/ondb_types');
+var Types = require('./types')
+var Parse = require('./parse');
+var Stringify = require('./stringify');
+var Stream = require('./readable');
+var pack = JSON.parse(fs.readFileSync(__dirname + '/../package.json'));
+
+util.inherits(Store, EventEmitter);
+module.exports = Store;
+
+/**
+ * Store constructor
+ * @param {Configuration} configuration Configuration object.
+ * @constructor
+ */
+function Store(/*Configuration*/ configuration) {
+
+  Logger.debug('New Store instance');
+
+  var self = this;
+  this._version = null;
+  var proxyConf = configuration.proxy;
+  Errors.missingParameter(configuration, 'configuration');
+  Errors.missingParameter(proxyConf, 'configuration.proxy');
+  Errors.missingParameter(proxyConf.startProxy,
+    'configuration.proxy.startProxy');
+  Errors.missingParameter(proxyConf.host, 'configuration.proxy.host');
+  Errors.missingParameter(configuration.storeName, 'configuration.storeName');
+  Errors.missingParameter(configuration.storeHelperHosts,
+    'configuration.storeHelperHosts');
+
+  configuration.requestTimeout = parseInt(configuration.requestTimeout);
+
+  // verify jars for proxy
+  if (proxyConf.startProxy === true) {
+    if (!fs.existsSync(proxyConf.KVCLIENT_JAR)) {
+      var error = new Errors.ParameterError('configuration.proxy.KVCLIENT_JAR',
+        'kvclient.jar file not found, KVCLIENT_JAR value: ' +
+        configuration.proxy.KVCLIENT_JAR
+      );
+      Logger.error(error);
+      throw error;
+    }
+    var proxyFile = path.normalize(proxyConf.KVPROXY_JAR);
+    if (!fs.existsSync(proxyFile)) {
+      var error = new Errors.ParameterError('proxy.KVPROXY_JAR',
+        'kvproxy.jar file not found, full path: ' +
+        proxyFile + '  using KVPROXY_JAR value: ' + proxyConf.KVPROXY_JAR
+      );
+      Logger.error(error);
+      throw error;
+    }
+  }
+
+  EventEmitter.call(this);
+  this.isConnected = false;
+  this.thriftClient = null;
+  this.configuration = configuration;
+  var thriftConnection;
+  this._verifyDefaultConsistency();
+
+  function setClient(callback) {
+    Logger.debug('Set NoSQL DB Proxy: ' + proxyConf.host);
+
+    callback = callback || function () {
+    };
+    var host;
+    var port;
+    var colon = proxyConf.host.indexOf(':');
+    if (colon) {
+      host = proxyConf.host.substr(0, colon);
+      port = proxyConf.host.substr(colon + 1);
+      if (proxyConf.startProxy === true) {
+        if (!(host == 'localhost') || (host == '127.0.0.1')) {
+          callback(new Errors.ParameterError(
+            'configuration.proxy.host',
+            'To start the proxy, the host should be localhost.'));
+          return;
+        }
+      }
+    } else {
+      callback(new Errors.ParameterError(
+        'configuration.proxy.host',
+        'The parameter must follow the format host:port'));
+      return;
+    }
+    var options = {
+      transport: thrift.TFramedTransport,
+      protocol: thrift.TBinaryProtocol
+    };
+    if (configuration.requestTimeout > 0)
+      options.timeout = configuration.requestTimeout;
+    thriftConnection = thrift.createConnection(host, port, options)
+      .on('error', function onErrorThrift(err) {
+        Logger.debug('Error on thrift Connection' + err);
+        callback(err);
+        thriftConnection.removeAllListeners('error');
+        thriftConnection.removeAllListeners('connect');
+      }).on('connect', function onConnectThrift(err) {
+        Logger.debug('Thrift Connection successful');
+        self.thriftClient = thrift.createClient(ONDBClient, thriftConnection);
+        callback();
+        thriftConnection.removeAllListeners('error');
+        thriftConnection.removeAllListeners('connect');
+      });
+  }
+
+  function verify(callback) {
+
+    Logger.debug('Starting verify process');
+    Logger.debug('kvStoreName: ' + configuration.storeName);
+    Logger.debug('kvStoreHelperHosts: ' + configuration.storeHelperHosts);
+    Logger.debug('username: ' + configuration.username);
+    Logger.debug('readZones: ' + configuration.readZones);
+
+    callback = callback || function () {
+    };
+    var verify = new Types.VerifyProperties({
+      kvStoreName: configuration.storeName,
+      kvStoreHelperHosts: configuration.storeHelperHosts,
+      username: configuration.username,
+      readZones: configuration.readZones,
+      driverProtocolVersion: pack.protocolVersion
+    });
+
+    var timeout = setTimeout(function () {
+      callback(new Errors.ConnectionError('Connection timeout'))
+    }, 2000);
+
+    self.thriftClient.verify(verify, function (err, result) {
+      if (err) {
+        if (callback)
+          callback(new Errors.ConnectionError('Verification error', err));
+      } else {
+        if (result) {
+          if (result.isConnected) {
+            if (result.proxyProtocolVersion) {
+              var found = false;
+              for (var index in pack.protocolSupported) {
+                if (pack.protocolSupported[index] ==
+                    result.proxyProtocolVersion)
+                  found = true;
+              }
+              if (found)
+                callback();
+              else
+                callback(new Errors.ConnectionError(
+                  'Verification process failed.',
+                  'This driver can\'t support ' +
+                  ' proxy protocol version: ' + result.proxyProtocolVersion));
+            } else
+              callback(new Errors.ConnectionError(
+                'Verification process failed.',
+                'Protocol version not set'));
+          } else
+            callback(new Errors.ConnectionError(
+              'Verification process failed.',
+              types.VerifyErrorDescription(result.errorType)));
+        } else
+          callback(new Errors.ConnectionError(
+            'Verification result not received', err));
+      }
+      callback = null;
+      clearTimeout(timeout);
+    });
+  }
+
+  /**
+   * This method opens a connection to a kvstore server. It tries to start a
+   * Thrift proxy if startProxy is set to true on configuration options. This
+   * process also calls the 'open' event in the listener protocol or 'error' if
+   * an error occurs during opening.
+   * @param {openCallback} [callback] Calls this function when the process
+   *   finishes, will return an error object if the opening process fails.
+   * @method
+   */
+  this.open = function open(/*function*/ callback, attempt, latestError) {
+    Logger.debug('Store open');
+    callback = callback || function () {
+    };
+    if (typeof attempt === 'undefined')
+      attempt = 1; else attempt++;
+
+    if (self.isConnected) {
+      var error =
+        new Errors.ConnectionError('This store is already connected');
+      self.reportError(error, callback);
+      callback = null;
+      return;
+    }
+    if (attempt > configuration.connectionAttempts) {
+      var errorMsg = 'Maximum connection attempts ' +
+                     configuration.connectionAttempts +
+                     ' reached';
+      if (proxyConf.startProxy === true) {
+        errorMsg += ', latest proxy error: ' + latestError;
+      }
+      var error = new Errors.ConnectionError(errorMsg);
+      self.reportError(error, callback);
+      callback = null;
+      return;
+    }
+    Logger.debug('Setting client');
+    setClient(function (err) {
+      if (err !== undefined) {
+        if (err instanceof Errors.ParameterError) {
+          self.reportError(err, callback);
+          return;
+        }
+        if (proxyConf.startProxy === true)
+          Proxy.startProxy(configuration, function (err, output) {
+            self.open(callback, attempt, output);
+          });
+        else {
+          var error = new Errors.ConnectionError(
+            'Error connecting the proxy', err);
+          self.reportError(error, callback);
+          callback = null;
+        }
+      } else {
+        verify(function (err) { // Verify failed
+          if (err) {
+            var error = new Errors.ConnectionError(
+              'Error verifying the proxy connection', err);
+            self.reportError(error, callback);
+            callback = null;
+            thriftConnection.end();
+          } else {
+            Logger.debug('Store connected to proxy');
+            self.isConnected = true;
+            if (callback)
+              callback();
+            callback = null;
+            self.emit('open');
+          }
+        });
+      }
+    });
+  };
+
+  /**
+   * Closes the connection.
+   */
+  this.close = function (callback) {
+    Logger.info('Store close');
+    callback = callback || function () {
+    };
+
+    if (self.isConnected) {
+      thriftConnection.end();
+      self.isConnected = false;
+      callback();
+      self.emit('close');
+    }
+  };
+}
+/**
+ * @callback openCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ */
+
+Store.prototype._verifyDefaultConsistency =
+function _verifyDefaultConsistency() {
+  var self = this;
+  var consistency = self.configuration.defaultConsistency;
+
+  if (consistency !== undefined)
+    if (consistency)
+      if (!(
+        (consistency instanceof Types.Consistency) ||
+        (consistency instanceof Types.TimeConsistency) ||
+        (consistency instanceof Types.VersionConsistency)
+        ))
+        throw new Error('Error in configuration.defaultConsistency, ' +
+                        'is not a valid Consistency object.');
+
+  //Check for Time/Version default consistency
+  if (!(consistency instanceof Types.Consistency))
+    consistency = new Types.Consistency(consistency);
+
+  self.configuration.defaultConsistency = consistency;
+};
+
+Store.prototype._checkReadOptions =
+function _checkReadOptions(/*ReadOptions*/ readOptions) {
+  var self = this;
+
+  // Default readoptions
+  readOptions = readOptions ||
+                new Types.ReadOptions(
+                  self.configuration.defaultConsistency,
+                  self.configuration.requestTimeout);
+
+  // Default consistency
+  var consistency =
+    readOptions.consistency || self.configuration.defaultConsistency;
+
+  // Check for true objects
+  if (!(
+    (consistency instanceof Types.Consistency) ||
+    (consistency instanceof Types.SimpleConsistency.NONE_REQUIRED_NO_MASTER)
+    ||
+    (consistency instanceof Types.SimpleConsistency.NONE_REQUIRED) ||
+    (consistency instanceof Types.SimpleConsistency.ABSOLUTE) ||
+    (consistency instanceof Types.TimeConsistency) ||
+    (consistency instanceof Types.VersionConsistency) ))
+    throw new Error('Error in readOptions.consistency, ' +
+                    'is not a valid Consistency object.');
+
+  // Check for Simple/Time/Version consistency
+  if (!(consistency instanceof Types.Consistency))
+    consistency = new Types.Consistency(readOptions.consistency);
+
+  readOptions.consistency = consistency;
+
+  return readOptions;
+};
+
+function checkWriteOptions(/*WriteOptions*/ writeOptions,
+                           /*Configuration*/ configuration) {
+  writeOptions = writeOptions ||
+                 new Types.WriteOptions(
+                   configuration.defaultDurability,
+                   configuration.requestTimeout);
+  writeOptions.durability = writeOptions.durability ||
+                            configuration.defaultDurability;
+  return writeOptions;
+}
+
+Store.prototype.reportError = function reportError(error, callback) {
+  callback = callback || function () {
+  };
+  Logger.error(error);
+  callback(error);
+  try {
+    this.emit('error', error);
+  } catch (error) {
+    Logger.debug("No error event available to catch error: " + error);
+  }
+};
+
+Store.prototype.checkIsConnected = function checkIsConnected() {
+  var self = this;
+  if (!self.isConnected)
+    throw new Errors.ConnectionError(
+      '\nThe store is not connected.' +
+      '\nStore name: ' + self.configuration.storeName +
+      '\nStore helper hosts: ' + self.configuration.storeHelperHosts +
+      '\nUsername: ' + self.configuration.username +
+      '\nRead zones: ' + self.configuration.readZones +
+      '\nCheck your configuration and try again.');
+};
+
+/**
+ * Attempts to shutdown the proxy related to the configuration of this store.
+ * @param {shutdownProxyCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.shutdownProxy = function shutdownProxy(callback) {
+  var self = this;
+
+  callback = callback || function () {
+  };
+
+  if (self.isConnected) {
+    self.close();
+    self.thriftClient.shutdown();
+    callback();
+  } else {
+    Proxy.stopProxy(self.configuration.proxy, callback);
+  }
+};
+/**
+ * @callback shutdownProxyCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ */
+
+/**
+ * Gets the Row associated with the primary key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {ReadOptions} [readOptions] Non-default options for the operation or
+ *   null to get default behavior.
+ * @param {getCallback} [callback] A function that is called when the process
+ *   ends.
+ *
+ */
+Store.prototype.get = function get(/*String*/ tableName,
+                                   /*Object*/ primaryKey,
+                                   /*ReadOptions*/ readOptions,
+                                   /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof readOptions === 'function') {
+    callback = readOptions;
+    readOptions = null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.get(tableName, primaryKey, readOptions,
+    function (err, response) {
+      Logger.debug('Return from get with err:' + err);
+      if (err) {
+        var error = Errors.getProxyError(err, 'get()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.GetResult(response);
+        callback(null, result);
+      }
+    });
+};
+/**
+ * @callback getCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {GetResult} result The result associated with this operation.
+ */
+
+/**
+ * Returns the rows associated with a partial primary key in an atomic
+ * manner. Rows are returned in primary key order. The key used must contain
+ * all of the fields defined for the table's shard key.
+ * @param {String} tableName The table name.
+ * @param {Object} partialPrimaryKey The primary key for a table.
+ * It may be partial or complete. The key used must contain all of the fields
+ * defined for the table's shard key.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {multiGetCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.multiGet = function multiGet(/*String*/ tableName,
+                                             /*Object*/ partialPrimaryKey,
+                                             /*Object*/ options,
+                                             /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(partialPrimaryKey, 'primaryKey');
+
+  partialPrimaryKey = new ttypes.TRow({jsonRow: Stringify(partialPrimaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.multiGet(tableName, partialPrimaryKey, fieldRange,
+    includedTables,
+    readOptions, function (err, response) {
+
+      if (err) {
+        var error = Errors.getProxyError(err, 'multiGet()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.MultiGetResult(response);
+        callback(null, result);
+      }
+
+    });
+
+};
+/**
+ * @callback multiGetCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {MultiGetResult} result The result associated with this
+ * operation.
+ */
+
+/**
+ * Returns the rows associated with a partial primary key in an atomic manner.
+ * Keys are returned in primary key order. The key used must contain all of
+ * the fields defined for the table's shard key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys. the primaryKey parameter
+ *   is always included as a target.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {multiGetKeysCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.multiGetKeys =
+function multiGetKeys(/*String*/ tableName,
+                      /*Object*/ primaryKey,
+                      /*Object*/ options,
+                      /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.multiGetKeys(tableName, primaryKey, fieldRange,
+    includedTables, readOptions, function (err,
+                                           response) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'multiGetKeys()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response &amp;&amp; response.rowsWithMetadata)
+          result = new Types.MultiGetKeyResult(response);
+        callback(null, result);
+      }
+    });
+};
+/**
+ * @callback multiGetKeysCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {MultiGetKeyResult} result The result associated with this
+ * operation.
+ */
+
+/**
+ * Puts a row into a table. The row must contain a complete primary key and
+ * all required fields.
+ * @param {String} tableName The table name.
+ * @param {Object} row the primary key for a table. It must be a complete
+ *   primary key, with all fields set.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behaviour.
+ * @param {putCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.put = function put(/*String*/ tableName,
+                                   /*Object*/ row,
+                                   /*WriteOptions*/ writeOptions,
+                                   /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(row, 'row');
+
+  var ttl = row.ttl;  
+  row = new ttypes.TRow({jsonRow: Stringify(row)});
+  row.ttl = ttl;
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+
+  self.thriftClient.put(tableName, row, writeOptions,
+    function (err, response) {
+      Logger.debug('Return from put with err:' + err);
+      if (err) {
+        var error = Errors.getProxyError(err, 'put()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.PutResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * Puts a row into a table, but only if the row does not exist. The row must
+ * contain a complete primary key and all required fields.
+ * @param {String} tableName The table name.
+ * @param {Object} row The primary key for a table. It must be a complete
+ *   primary key, with all fields set.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behavior.
+ * @param {putCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.putIfAbsent =
+function putIfAbsent(/*String*/ tableName,
+                     /*Object*/ row,
+                     /*WriteOptions*/ writeOptions,
+                     /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(row, 'row');
+
+  row = new ttypes.TRow({jsonRow: Stringify(row)});
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.putIfAbsent(tableName, row, writeOptions,
+    function (err, response) {
+      Logger.debug('Return from putIfAbsent with err:' + err);
+      if (err) {
+        var error = Errors.getProxyError(err, 'putIfAbsent()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.PutResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * Puts a row into a table, but only if the row already exists. The row must
+ * contain a complete primary key and all required fields.
+ * @param {String} tableName The table name.
+ * @param {Object} row the primary key for a table. It must be a complete
+ *   primary key, with all fields set.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behavior.
+ * @param {putCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.putIfPresent =
+function putIfPresent(/*String*/ tableName,
+                      /*Object*/ row,
+                      /*WriteOptions*/ writeOptions,
+                      /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(row, 'row');
+
+  row = new ttypes.TRow({jsonRow: Stringify(row)});
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.putIfPresent(tableName, row, writeOptions,
+    function (err, response) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'putIfPresent()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.PutResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * Puts a row, but only if the version of the existing row matches the
+ * matchVersion argument. Used when updating a value to ensure that it has
+ * not changed since it was last read. The row must contain a complete
+ * primary key and all required fields.
+ * @param {String} tableName The table name.
+ * @param {Object} row The primary key for a table. It must be a complete
+ *   primary key, with all fields set.
+ * @param {Buffer} matchVersion The version to match.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behavior.
+ * @param {putCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.putIfVersion =
+function putIfVersion(/*String*/ tableName,
+                      /*Object*/ row,
+                      /*Version*/ matchVersion,
+                      /*WriteOptions*/ writeOptions,
+                      /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(row, 'row');
+  Errors.missingParameter(matchVersion, 'matchVersion');
+
+  row = new ttypes.TRow({jsonRow: Stringify(row)});
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.putIfVersion(tableName, row, matchVersion.id,
+    writeOptions, function (err, response) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'putIfVersion()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.PutResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * @callback putCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {PutResult} result The result associated with this
+ * operation.
+ */
+
+/**
+ * Deletes a row from a table.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behaviour.
+ * @param {deleteCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.delete = function deleteRow(/*String*/ tableName,
+                                            /*Object*/ primaryKey,
+                                            /*WriteOptions*/ writeOptions,
+                                            /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.deleteRow(tableName, primaryKey, writeOptions,
+    function (err, response) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'deleteRow()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.DeleteResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * Deletes a row from a table but only if its version matches the one
+ * specified in matchVersion.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Version} matchVersion The version to match.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behavior.
+ * @param {deleteCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.deleteIfVersion =
+function deleteIfVersion(/*String*/ tableName,
+                         /*Object*/ primaryKey,
+                         /*Version*/ matchVersion,
+                         /*WriteOptions*/ writeOptions,
+                         /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+  Errors.missingParameter(matchVersion, 'matchVersion');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.deleteRowIfVersion(tableName, primaryKey, matchVersion.id,
+    writeOptions, function (err, response) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'deleteRowIfVersion()');
+        self.reportError(error, callback);
+      } else {
+        var result = null;
+        if (response)
+          result = new Types.DeleteResult(response);
+        callback(null, result);
+      }
+    });
+};
+
+/**
+ * @callback deleteCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {DeleteResult} result The result associated with this
+ * operation.
+ */
+
+/**
+ * Deletes multiple rows from a table in an atomic operation. The key used
+ * may be partial but must contain all of the fields that are in the shard
+ * key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     writeOptions: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {WriteOptions} options.writeOptions Non-default arguments controlling
+ *   the Durability of the operation, or null to get default behavior.
+ * @param {multiDeleteCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.multiDelete =
+function multiDelete(/*String*/ tableName,
+                     /*Object*/ primaryKey,
+                     /*Object*/ options,
+                     /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName', 'string');
+  Errors.missingParameter(primaryKey, 'primaryKey', 'object');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, writeOptions;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    writeOptions = ('readOptions' in options) ? options.readOptions : null;
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  return self.thriftClient.multiDelete(
+    tableName,
+    primaryKey,
+    fieldRange,
+    includedTables,
+    writeOptions,
+    function (err, response) {
+      Logger.debug('Return from multiDelete with err:' + err);
+      if (err) {
+        var error = Errors.getProxyError(err, 'multiDelete()');
+        self.reportError(error, callback);
+      } else {
+        callback(null, response);
+      }
+    });
+
+};
+/**
+ * @callback multiDeleteCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {Number} result The number of rows deleted by this
+ * operation.
+ */
+
+/**
+ * Returns an iterator over the rows associated with a partial primary key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {iteratorCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.tableIterator =
+function tableIterator(/*String*/ tableName,
+                       /*Object*/ primaryKey,
+                       /*Object*/ options,
+                       /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.tableIterator(
+    tableName,
+    primaryKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'tableIterator()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Iterator(self.thriftClient, result, Types.MultiGetResult));
+    });
+
+};
+
+/**
+ * Returns an iterator over the keys associated with a partial primary key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {iteratorCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.tableKeyIterator =
+function tableKeyIterator(/*String*/ tableName,
+                          /*Object*/ primaryKey,
+                          /*Object*/ options,
+                          /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.tableKeyIterator(
+    tableName,
+    primaryKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'tableKeyIterator()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Iterator(self.thriftClient, result, Types.MultiGetKeyResult));
+    });
+};
+
+/**
+ * Returns an iterator over the rows associated with an index key. This
+ * method requires an additional database read on the server side to get row
+ * information for matching rows. Ancestor table rows for matching index rows
+ * may be returned as well if specified in the getOptions parameter. Index
+ * operations may not specify the return of child table rows.
+ * @param {String} tableName The table name.
+ * @param {String} indexName The index name.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { indexKey: null,
+ *     fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {Object} options.indexKey The index key for the operation. It may be
+ *   partial or complete. If the key has no fields set the entire index is
+ *   matched.
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {iteratorCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.indexIterator =
+function indexIterator(/*String*/ tableName,
+                       /*String*/ indexName,
+                       /*Object*/ options,
+                       /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(indexName, 'indexName');
+
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var indexKey, fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    indexKey = ('indexKey' in options) ?
+      new ttypes.TRow({jsonRow: Stringify(options.indexKey)}) : null;
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.indexIterator(
+    tableName,
+    indexName,
+    indexKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'indexIterator()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Iterator(self.thriftClient, result, Types.MultiGetResult));
+    });
+};
+
+/**
+ * Returns the KeyPair for matching rows associated with an index key. The
+ * iterator returned only references information directly available from the
+ * index -- the row's primary key and the matching index key for the entry.
+ * No extra fetch operations are performed. Ancestor table keys for
+ * matching index keys may be returned as well if specified in the getOptions
+ * parameter. Index operations may not specify the return of child table keys.
+ * @param {String} tableName The table name.
+ * @param {String} indexName The index name.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { indexKey: null,
+ *     fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {Object} options.indexKey The index key for the operation. It may be
+ *   partial or complete. If the key has no fields set the entire index is
+ *   matched.
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {iteratorCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.indexKeyIterator =
+function indexKeyIterator(/*String*/ tableName,
+                          /*String*/ indexName,
+                          /*Object*/ options,
+                          /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(indexName, 'indexName');
+
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var indexKey, fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    indexKey = ('indexKey' in options) ?
+      new ttypes.TRow({jsonRow: Stringify(options.indexKey)}) : null;
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.indexKeyIterator(
+    tableName,
+    indexName,
+    indexKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'indexKeyIterator()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Iterator(self.thriftClient, result, Types.KeyPairResult));
+    });
+};
+
+/**
+ * @callback iteratorCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {Iterator} result An Iterator object with the item results for this
+ *  call.
+ *
+ */
+
+/**
+ * Refreshes cached information about the tables. This method is
+ * required before using any tables that had been modified.
+ * @param {function} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.refreshTables = function refreshTables(callback) {
+  var self = this;
+
+  callback = callback || function () {
+  };
+  self.checkIsConnected();
+  self.thriftClient.refreshTables(function (err) {
+    if (err) {
+      var error = Errors.getProxyError(err, 'refreshTables()');
+      self.reportError(error, callback);
+    } //else
+      //callback();
+  });
+  // TODO: error in proxy, no return, use manual callback
+  callback();
+};
+
+/**
+ * Executes a table statement. Currently, table statements
+ * can be used to create or modify tables and indices.
+ * @param {String} statement The statement to be performed.
+ * @param {executeCallback} [callback] A function that is called when the
+ * process ends.
+ */
+Store.prototype.execute = function execute(/*String*/ statement,
+                                           /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(statement, 'statement');
+
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.executeSyncV2(statement, function (err, result) {
+    if (err) {
+      var error = Errors.getProxyError(err, 'execute()');
+      self.reportError(error, callback);
+    } else
+      callback(null, new Types.StatementResult(result));
+  })
+};
+
+/**
+ * Executes a table DDL statement in the server without waiting for a response.
+ * Currently, table statements can be used to create or modify tables and
+ * indices.
+ * @param {String} statement The statement to be performed.
+ * @param {executeFutureCallback} [callback] A function that is called when the
+ * process ends.
+ */
+Store.prototype.executeFuture =
+function executeFuture(/*String*/ statement,
+                       /*executeCallback*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(statement, 'statement');
+
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.executeV2(statement, function (err, result) {
+    if (err) {
+      var error = Errors.getProxyError(err, 'executeBackground()');
+      self.reportError(error, callback);
+    } else
+      callback(null, new Types.ExecutionFuture(result, self));
+  })
+};
+
+/**
+ * @callback executeFutureCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {ExecutionFuture} result A statementResult object with information
+ *  about the process.
+ */
+
+/**
+ * Creates an ExecutionFuture object from a ExecutionId object.
+ * @param {ExecutionId} executionId The ExecutionId from which the execution
+ * future is going to be constructed.
+ * @return {ExecutionFuture} executionFuture The ExecutionFuture object.
+ */
+Store.prototype.getExecutionFuture =
+function getExecutionFuture(/*ExecutionId*/ executionId) {
+  var self = this;
+
+  Errors.missingParameter(executionId, 'executionId');
+
+  self.checkIsConnected();
+
+  return new Types.ExecutionFuture(executionId, self);
+};
+
+/**
+ * This method provides an efficient and transactional mechanism for
+ * executing a sequence of operations associated with tables that share
+ * the same shard key portion of their primary keys.
+ * @param {Array} operations The operations to be performed.
+ * @param {WriteOptions} [writeOptions] Non-default arguments controlling the
+ *   Durability of the operation, or null to get default behaviour.
+ *   For this method, returnChoice is not allowed within writeOptions object
+ *   and it must be null, instead, every operation should handle their own
+ *   returnChoice option.
+ * @param {executeUpdatesCallback} [callback] A function that is called when
+ * the process ends.
+ */
+Store.prototype.executeUpdates =
+function executeUpdates(/*Array*/ operations,
+                        /*WriteOptions*/ writeOptions,
+                        /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(operations, 'operations');
+  if (!(operations instanceof Array))  // Only one operation sent
+    operations = [operations];
+  for (var key in operations)
+    if (!(operations[key] instanceof Types.Operation)) {
+      throw new Errors.ParameterError(
+        'operation[' + key + ']',
+        'The operation is invalid. ' +
+        'Create operations with Operation() constructor.');
+    }
+  if (operations.length &lt;= 0)
+    throw new Errors.ParameterError(
+      'operations', 'The operations array is empty.');
+  // check for null versions
+  for (var key in operations) {
+    if (operations[key].tableName === null)
+      throw new Errors.ParameterError(
+        'operation[' + key + ']',
+        'The operation contains a null tableName.');
+    if (operations[key].type === null)
+      throw new Errors.ParameterError(
+        'operation[' + key + ']',
+        'The operation contains a null type.');
+    if (operations[key].row === null)
+      throw new Errors.ParameterError(
+        'operation[' + key + ']',
+        'The operation contains a null row.');
+
+    if ((operations[key].type === Types.OperationType.PUT_IF_VERSION) ||
+        (operations[key].type === Types.OperationType.DELETE_IF_VERSION))
+      if (operations[key].matchVersion instanceof Types.Version) {
+        if (operations[key].matchVersion.id !== undefined)
+          operations[key].matchVersion = operations[key].matchVersion.id;
+      } else
+        throw new Errors.ParameterError(
+          'operation[' + key + ']',
+          'The operation contains an invalid Version.');
+
+    //fix content
+    operations[key].row =
+    new ttypes.TRow({jsonRow: Stringify(operations[key].row)});
+    if (operations[key].ttl !== undefined)
+      if (operations[key].ttl)
+         operations[key].row.ttl = operations[key].ttl;
+
+  }
+
+  if (typeof writeOptions === 'function') {
+    callback = writeOptions;
+    writeOptions = null;
+  }
+
+  // Verify that returnChoice doesn't exist or is null
+  if (writeOptions) {
+    if (writeOptions.returnChoice) {
+      var error = new Errors.ParameterError('writeOptions.returnChoice',
+        'returnChoice is not allowed on writeOptions for executeUpdates(). ' +
+        'It must be used on each operation. ');
+      throw error;
+    }
+  }
+  writeOptions = checkWriteOptions(writeOptions, self.configuration);
+  callback = callback || function () {};
+
+  self.checkIsConnected();
+  self.thriftClient.executeUpdates(operations, writeOptions,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'executeUpdates()');
+        self.reportError(error, callback);
+      } else {
+        var finalResult = [];
+        if (result) {
+          for (var row in result)
+            finalResult.push(new Types.UpdateResult(result[row]))
+        }
+        callback(null, finalResult);
+      }
+    });
+};
+/**
+ * @callback executeUpdatesCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {UpdateResult} result A statementResult object with information
+ *  about the process.
+ */
+
+/**
+ * Returns a Readable Stream over the rows associated with a partial primary
+ * key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {streamCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.tableStream = function tableStream(/*String*/ tableName,
+                                                   /*Object*/ primaryKey,
+                                                   /*Object*/ options,
+                                                   /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.tableIterator(
+    tableName,
+    primaryKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'tableStream()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Stream(self, result));
+    });
+
+};
+
+/**
+ * Returns a Readable Stream over the keys associated with a partial primary
+ * key.
+ * @param {String} tableName The table name.
+ * @param {Object} primaryKey The primary key for a table. It must be a
+ *   complete primary key, with all fields set.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {streamCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.tableKeyStream =
+function tableKeyStream(/*String*/ tableName,
+                        /*Object*/ primaryKey,
+                        /*Object*/ options,
+                        /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(primaryKey, 'primaryKey');
+
+  primaryKey = new ttypes.TRow({jsonRow: Stringify(primaryKey)});
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.tableKeyIterator(
+    tableName,
+    primaryKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'tableKeyStream()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Stream(self, result));
+    });
+};
+
+/**
+ * Returns a Readable Stream over the rows associated with an index key. This
+ * method requires an additional database read on the server side to get row
+ * information for matching rows. Ancestor table rows for matching index rows
+ * may be returned as well if specified in the getOptions parameter. Index
+ * operations may not specify the return of child table rows.
+ * @param {String} tableName The table name.
+ * @param {String} indexName The index name.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { indexKey: null,
+ *     fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {Object} options.indexKey The index key for the operation. It may be
+ *   partial or complete. If the key has no fields set the entire index is
+ *   matched.
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {streamCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.indexStream = function indexStream(/*String*/ tableName,
+                                                   /*String*/ indexName,
+                                                   /*Object*/ options,
+                                                   /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(indexName, 'indexName');
+
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var indexKey, fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    indexKey = ('indexKey' in options) ?
+      new ttypes.TRow({jsonRow: Stringify(options.indexKey)}) : null;
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.indexIterator(
+    tableName,
+    indexName,
+    indexKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'indexStream()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+          new Stream(self, result));
+    });
+};
+
+/**
+ * Return a Readable Stream with the KeyPairs for matching rows associated with
+ * an index key. The Stream returned only references information directly
+ * available from the index. No extra fetch operations are performed.
+ * Ancestor table keys for matching index keys may be returned as well if
+ * specified in the getOptions parameter. Index operations may not specify the
+ * return of child table keys.
+ * @param {String} tableName The table name.
+ * @param {String} indexName The index name.
+ * @param {Object} [options] An object that includes the following
+ *   parameters:
+ *   { indexKey: null,
+ *     fieldRange: null,
+ *     includedTables: null,
+ *     readOptions: null,
+ *     direction: null }
+ * @param {Object} options.indexKey The index key for the operation. It may be
+ *   partial or complete. If the key has no fields set the entire index is
+ *   matched.
+ * @param {FieldRange} options.fieldRange The FieldRange to be used to restrict
+ *   the range of the operation.
+ * @param {Array} options.includedTables The list of tables to be included in
+ *   an operation that returns multiple rows or keys.
+ * @param {ReadOptions} options.readOptions Non-default options for the
+ *   operation or null to get default behavior.
+ * @param {Direction} options.direction The Direction for this operation. If
+ *   the primary key contains a complete shard key both Direction.FORWARD and
+ *   Direction.REVERSE are allowed.
+ * @param {streamCallback} [callback] A function that is called when the process
+ *   ends.
+ */
+Store.prototype.indexKeyStream =
+function indexKeyStream(/*String*/ tableName,
+                        /*String*/ indexName,
+                        /*Object*/ options,
+                        /*function*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(tableName, 'tableName');
+  Errors.missingParameter(indexName, 'indexName');
+
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  var indexKey, fieldRange, includedTables, readOptions, direction;
+  if (options) {
+    indexKey = ('indexKey' in options) ?
+      new ttypes.TRow({jsonRow: Stringify(options.indexKey)}) : null;
+    fieldRange = ('fieldRange' in options) ? options.fieldRange : null;
+    includedTables =
+    ('includedTables' in options) ? options.includedTables : null;
+    readOptions = ('readOptions' in options) ? options.readOptions : null;
+    direction = ('direction' in options) ? options.direction : null;
+  }
+  readOptions = self._checkReadOptions(readOptions);
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.indexKeyIterator(
+    tableName,
+    indexName,
+    indexKey,
+    fieldRange,
+    includedTables,
+    readOptions,
+    direction,
+    self.configuration.iteratorBufferSize,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'indexKeyStream()');
+        self.reportError(error, callback);
+      } else
+        callback(null,
+                 new Stream(self, result));
+    });
+};
+
+/**
+ * @callback streamCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {Readable} result A Stream object with the result of this operation.
+ */
+
+/**
+ * Return a String with the version of the Proxy/Java
+ * @param {ModuleInfo} moduleInfo This parameter indicates which module the
+ * version is asked.
+ * @param {versionCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.version =
+function version(/*ModuleInfo*/ moduleInfo, /*funcion*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(moduleInfo, 'moduleInfo');
+
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  if (moduleInfo == Types.ModuleInfo.JS_DRIVER) {
+    callback(null, pack.version);
+  } else
+    self.thriftClient.version(moduleInfo,
+      function (err, result) {
+        if (err) {
+          var error = Errors.getProxyError(err, 'version()');
+          self.reportError(error, callback);
+        } else {
+          callback(null, result);
+        }
+      });
+};
+
+/**
+ * Return a String with the status of the Proxy/Java.
+ * @param {ModuleInfo} moduleInfo This parameter indicates which module the
+ * version is asked.
+ * @param {versionCallback} [callback] A function that is called when the
+ *   process ends.
+ */
+Store.prototype.status =
+function status(/*ModuleInfo*/ moduleInfo, /*funcion*/ callback) {
+  var self = this;
+
+  Errors.missingParameter(moduleInfo, 'moduleInfo');
+
+  callback = callback || function () {
+  };
+
+  self.checkIsConnected();
+  self.thriftClient.status(moduleInfo,
+    function (err, result) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'status()');
+        self.reportError(error, callback);
+      } else
+        callback(null, result);
+    });
+};
+
+/**
+ * Helper function to parse the results of a key-only iteration as a
+ * row with metadata or a plain key pair.
+ */
+Store.prototype.parseKeyPair =
+    function parseKeyPair(/*TRowWithMetadata*/ args) {
+        return new Types.KeyPair(args);
+    }
+
+/**
+ * @callback versionCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {String} result A String with the result of this operation.
+ */
+
+/**
+ * Helper function to parse strings and convert them into Javascript objects,
+ * use it instead of common JSON.parse when you use long integers (64 bits).
+ * This function converts these long integers into Int64 objects.
+ * @type {parse|exports}
+ */
+Store.prototype.parse = Parse;
+
+/**
+ * Helper function to convert Javascript objects into strings,
+ * use it instead of common JSON.strings when you use Int64 objects.
+ * This function converts these Int64 objects into correct long integer strings.
+ * @type {parse|exports}
+ */
+Store.prototype.stringify = Stringify;
+
+/**
+ * Called when an error occurred
+ * @event Store#error
+ */
+
+/**
+ * Called when the Store is opened
+ * @event Store#open
+ */
+
+/**
+ * Called when the Store is closed
+ * @event Store#close
+ */
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Configuration.html">Configuration</a></li><li><a href="ConnectionError.html">ConnectionError</a></li><li><a href="Consistency.html">Consistency</a></li><li><a href="DeleteResult.html">DeleteResult</a></li><li><a href="Durability.html">Durability</a></li><li><a href="ExecutionFuture.html">ExecutionFuture</a></li><li><a href="ExecutionId.html">ExecutionId</a></li><li><a href="FieldRange.html">FieldRange</a></li><li><a href="GetResult.html">GetResult</a></li><li><a href="Iterator.html">Iterator</a></li><li><a href="IteratorError.html">IteratorError</a></li><li><a href="KeyPair.html">KeyPair</a></li><li><a href="KeyPairResult.html">KeyPairResult</a></li><li><a href="Logger.html">Logger</a></li><li><a href="ModuleInfo.html">ModuleInfo</a></li><li><a href="MultiGetKeyResult.html">MultiGetKeyResult</a></li><li><a href="MultiGetResult.html">MultiGetResult</a></li><li><a href="NoSQLDBError.html">NoSQLDBError</a></li><li><a href="Operation.html">Operation</a></li><li><a href="ParameterError.html">ParameterError</a></li><li><a href="ProxyConfiguration.html">ProxyConfiguration</a></li><li><a href="PutResult.html">PutResult</a></li><li><a href="Readable.html">Readable</a></li><li><a href="ReadOptions.html">ReadOptions</a></li><li><a href="ReplicaAckPolicy.html">ReplicaAckPolicy</a></li><li><a href="ReturnChoice.html">ReturnChoice</a></li><li><a href="ReturnKey.html">ReturnKey</a></li><li><a href="ReturnRow.html">ReturnRow</a></li><li><a href="Row.html">Row</a></li><li><a href="SimpleConsistency.html">SimpleConsistency</a></li><li><a href="StatementResult.html">StatementResult</a></li><li><a href="Store.html">Store</a></li><li><a href="StoreError.html">StoreError</a></li><li><a href="SyncPolicy.html">SyncPolicy</a></li><li><a href="TimeConsistency.html">TimeConsistency</a></li><li><a href="TimeToLive.html">TimeToLive</a></li><li><a href="UpdateResult.html">UpdateResult</a></li><li><a href="VerifyProperties.html">VerifyProperties</a></li><li><a href="Version.html">Version</a></li><li><a href="VersionConsistency.html">VersionConsistency</a></li><li><a href="WriteOptions.html">WriteOptions</a></li></ul><h3>Events</h3><ul><li><a href="Iterator.html#event:close">close</a></li><li><a href="Iterator.html#event:data">data</a></li><li><a href="Iterator.html#event:done">done</a></li><li><a href="Iterator.html#event:error">error</a></li><li><a href="Readable.html#event:data">data</a></li><li><a href="Readable.html#event:end">end</a></li><li><a href="Readable.html#event:error">error</a></li><li><a href="Store.html#event:close">close</a></li><li><a href="Store.html#event:error">error</a></li><li><a href="Store.html#event:open">open</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AuthenticationFailureException">AuthenticationFailureException</a></li><li><a href="global.html#AuthenticationRequiredException">AuthenticationRequiredException</a></li><li><a href="global.html#ConsistencyException">ConsistencyException</a></li><li><a href="global.html#DurabilityException">DurabilityException</a></li><li><a href="global.html#FaultException">FaultException</a></li><li><a href="global.html#IllegalArgumentException">IllegalArgumentException</a></li><li><a href="global.html#readConfiguration">readConfiguration</a></li><li><a href="global.html#RequestLimitException">RequestLimitException</a></li><li><a href="global.html#RequestTimeoutException">RequestTimeoutException</a></li><li><a href="global.html#startProxy">startProxy</a></li><li><a href="global.html#stopProxy">stopProxy</a></li><li><a href="global.html#TableOpExecutionException">TableOpExecutionException</a></li><li><a href="global.html#TimeUnit">TimeUnit</a></li><li><a href="global.html#UnauthorizedException">UnauthorizedException</a></li><li><a href="global.html#UnknownException">UnknownException</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a> on Thu Aug 01 2019 14:19:18 GMT+0530 (India Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

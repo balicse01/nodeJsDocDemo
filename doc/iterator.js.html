@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: iterator.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: iterator.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/*-
+ *
+ *  This file is part of Oracle NoSQL Database
+ *  Copyright (C) 2014, 2018 Oracle and/or its affiliates.  All rights reserved.
+ *
+ * If you have received this file as part of Oracle NoSQL Database the
+ * following applies to the work as a whole:
+ *
+ *   Oracle NoSQL Database server software is free software: you can
+ *   redistribute it and/or modify it under the terms of the GNU Affero
+ *   General Public License as published by the Free Software Foundation,
+ *   version 3.
+ *
+ *   Oracle NoSQL Database is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *   Affero General Public License for more details.
+ *
+ * If you have received this file as part of Oracle NoSQL Database Client or
+ * distributed separately the following applies:
+ *
+ *   Oracle NoSQL Database client software is free software: you can
+ *   redistribute it and/or modify it under the terms of the Apache License
+ *   as published by the Apache Software Foundation, version 2.0.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * and/or the Apache License in the LICENSE file along with Oracle NoSQL
+ * Database client or server distribution.  If not, see
+ * &lt;http://www.gnu.org/licenses/>
+ * or
+ * &lt;http://www.apache.org/licenses/LICENSE-2.0>.
+ *
+ * An active Oracle commercial licensing agreement for this product supersedes
+ * these licenses and in such case the license notices, but not the copyright
+ * notice, may be removed by you in connection with your distribution that is
+ * in accordance with the commercial licensing terms.
+ *
+ * For more information please contact:
+ *
+ * berkeleydb-info_us@oracle.com
+ *
+ */
+'use strict';
+
+/*global Logger*/
+/*global LOG_LEVELS*/
+/*global Errors*/
+/*global Types*/
+
+var Parse = require('./parse');
+var EventEmitter = require('events').EventEmitter;
+util.inherits(Iterator, EventEmitter);
+
+
+/**
+ * Iterator object.
+ * Contains a set of rows as result of parameters sent to the method
+ * that generated this object.
+ * @function {rowCallback} next Returns the next row if available.
+ * @function {rowCallback} getCurrent Returns the current row if available.
+ * @function {rowCallback} forEach Returns all the rows in sequence from
+ * this iterator executing the function for every row.
+ * @function {closeIteratorCallback} close Closes this iterator and free resources.
+ * @class Iterator
+ */
+function Iterator(/*client*/ client, /*TIteratorResult*/ iteratorResult,
+                  /*Object*/ ResultType) {
+  EventEmitter.call(this);
+  var self = this;
+  var iteratorId = iteratorResult.iteratorId;
+  var closed = false;
+  var buffer =
+    new ResultType(iteratorResult.result).returnRows;
+  var hasMore = iteratorResult.hasMore;
+  var index, length;
+  var buffering = false;
+  resetIndexes();
+
+  function reportError(error, callback) {
+    callback = callback || function(){};
+    Logger.error(error);
+    callback(error);
+    try {
+      this.emit('error', error);
+    } catch (error) {
+      Logger.debug("No error event available to catch error: " + error);
+    }
+  }
+
+  function resetIndexes() {
+    index = 0;
+    length = buffer.length - 1;
+  }
+
+  function isClosed() {
+    return closed;
+  }
+
+  this.isClosed = isClosed;
+
+  function next(callback) {
+    callback = callback || function () {};
+    if (closed)
+      callback(new Errors.IteratorError('This Iterator is closed'));
+
+    if (length >= index) {  //Available from buffer
+      var row = buffer[index++];
+      callback(null, row);
+      self.emit('data', row);
+      return;
+    }
+    if (hasMore) {
+      buffering = true;
+      client.iteratorNext(iteratorId, function (err, iteratorResult) {
+        if (err) {
+          var error = Errors.getProxyError(err, 'iterator.next()');
+          reportError(error, callback);
+        } else if (iteratorResult != null) {
+          buffer =
+            new ResultType(iteratorResult.result).returnRows;
+          hasMore = iteratorResult.hasMore;
+          resetIndexes();
+          var row = buffer[index++];
+          callback(null, row);
+          self.emit('data', row);
+        } else {
+          hasMore = false;
+          buffer = [];
+          resetIndexes();
+          callback(new Errors.IteratorError('No more elements on Iterator'));
+          self.emit('done');
+        }
+      });
+    } else {
+      callback(new Errors.IteratorError('No more elements on Iterator'));
+      self.emit('done');
+    }
+  }
+
+  this.next = next;
+
+  function getCurrent(callback) {
+    callback = callback || function () {};
+    Logger.debug('Iterator - getCurrent');
+
+    var _index = index - 1;
+    if (closed) {
+      callback(new Errors.IteratorError('This Iterator is closed'));
+      return;
+    }
+    if (length >= _index) {
+      callback(null, buffer[_index]);
+      self.emit('data', buffer[_index]);
+    }
+  }
+  this.getCurrent = getCurrent;
+
+  function forEach(callback) {
+    callback = callback || function(){};
+    Logger.debug('Iterator - forEach');
+    if (closed) {
+      callback(new Errors.IteratorError('This Iterator is closed'));
+      return;
+    }
+    var lastEntry = false;
+    while (true) { //Depleting buffer
+      if (length >= index) {
+        var row = buffer[index++];
+        callback(null, row);
+        self.emit('data', row);
+      } else if (hasMore) {
+        client.iteratorNext(iteratorId, function (err, iteratorResult) {
+          if (err) {
+            var error = Errors.getProxyError(err, 'iterator.next()');
+            reportError(error, callback);
+          } else if (iteratorResult != null) {
+            buffer =
+              new ResultType(iteratorResult.result).returnRows;
+            hasMore = iteratorResult.hasMore;
+            resetIndexes();
+            forEach(callback);
+          } else {
+            hasMore = false;
+            buffer = [];
+            lastEntry = true;
+            resetIndexes();
+            callback(new Errors.IteratorError('No more elements on Iterator'));
+            self.emit('done');
+          }
+        });
+        break;
+      } else {
+        lastEntry = true;
+        break;
+      }
+
+    }
+    if (lastEntry)  // Means this is the last entry, no more items available
+      self.emit('done');
+  }
+
+  this.forEach = forEach;
+
+  function close(callback) {
+    callback = callback || function(){};
+    Logger.debug('Iterator - close');
+    if (closed) {
+      var error = new Errors.IteratorError('This Iterator is closed');
+      callback(error);
+      self.emit('error', error);
+      return;
+    }
+
+    client.iteratorClose(iteratorId, function closingIterator(err) {
+      if (err) {
+        var error = Errors.getProxyError(err, 'iterator.next()');
+        reportError(error, callback);
+      } else {
+        callback();
+        self.emit('close');
+      }
+    });
+
+  }
+
+  this.close = close;
+}
+/**
+ * @callback closeIteratorCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ */
+/**
+ * @callback rowCallback
+ * @param {Error} error The error returned by the operation, if any, null
+ *  otherwise.
+ * @param {ReturnRow} result A result Object object with the row and
+ * metadata as result.
+ */
+
+/**
+ * Called when an error occurred
+ * @event Iterator#error
+ */
+
+/**
+ * Called when the Iterator is closed
+ * @event Iterator#close
+ */
+
+/**
+ * Called when the Iterator has data to be read
+ * @event Iterator#data
+ */
+
+/**
+ * Called when there is no more data available in the Iterator
+ * @event Iterator#done
+ */
+
+module.exports = Iterator;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Configuration.html">Configuration</a></li><li><a href="ConnectionError.html">ConnectionError</a></li><li><a href="Consistency.html">Consistency</a></li><li><a href="DeleteResult.html">DeleteResult</a></li><li><a href="Durability.html">Durability</a></li><li><a href="ExecutionFuture.html">ExecutionFuture</a></li><li><a href="ExecutionId.html">ExecutionId</a></li><li><a href="FieldRange.html">FieldRange</a></li><li><a href="GetResult.html">GetResult</a></li><li><a href="Iterator.html">Iterator</a></li><li><a href="IteratorError.html">IteratorError</a></li><li><a href="KeyPair.html">KeyPair</a></li><li><a href="KeyPairResult.html">KeyPairResult</a></li><li><a href="Logger.html">Logger</a></li><li><a href="ModuleInfo.html">ModuleInfo</a></li><li><a href="MultiGetKeyResult.html">MultiGetKeyResult</a></li><li><a href="MultiGetResult.html">MultiGetResult</a></li><li><a href="NoSQLDBError.html">NoSQLDBError</a></li><li><a href="Operation.html">Operation</a></li><li><a href="ParameterError.html">ParameterError</a></li><li><a href="ProxyConfiguration.html">ProxyConfiguration</a></li><li><a href="PutResult.html">PutResult</a></li><li><a href="Readable.html">Readable</a></li><li><a href="ReadOptions.html">ReadOptions</a></li><li><a href="ReplicaAckPolicy.html">ReplicaAckPolicy</a></li><li><a href="ReturnChoice.html">ReturnChoice</a></li><li><a href="ReturnKey.html">ReturnKey</a></li><li><a href="ReturnRow.html">ReturnRow</a></li><li><a href="Row.html">Row</a></li><li><a href="SimpleConsistency.html">SimpleConsistency</a></li><li><a href="StatementResult.html">StatementResult</a></li><li><a href="Store.html">Store</a></li><li><a href="StoreError.html">StoreError</a></li><li><a href="SyncPolicy.html">SyncPolicy</a></li><li><a href="TimeConsistency.html">TimeConsistency</a></li><li><a href="TimeToLive.html">TimeToLive</a></li><li><a href="UpdateResult.html">UpdateResult</a></li><li><a href="VerifyProperties.html">VerifyProperties</a></li><li><a href="Version.html">Version</a></li><li><a href="VersionConsistency.html">VersionConsistency</a></li><li><a href="WriteOptions.html">WriteOptions</a></li></ul><h3>Events</h3><ul><li><a href="Iterator.html#event:close">close</a></li><li><a href="Iterator.html#event:data">data</a></li><li><a href="Iterator.html#event:done">done</a></li><li><a href="Iterator.html#event:error">error</a></li><li><a href="Readable.html#event:data">data</a></li><li><a href="Readable.html#event:end">end</a></li><li><a href="Readable.html#event:error">error</a></li><li><a href="Store.html#event:close">close</a></li><li><a href="Store.html#event:error">error</a></li><li><a href="Store.html#event:open">open</a></li></ul><h3>Global</h3><ul><li><a href="global.html#AuthenticationFailureException">AuthenticationFailureException</a></li><li><a href="global.html#AuthenticationRequiredException">AuthenticationRequiredException</a></li><li><a href="global.html#ConsistencyException">ConsistencyException</a></li><li><a href="global.html#DurabilityException">DurabilityException</a></li><li><a href="global.html#FaultException">FaultException</a></li><li><a href="global.html#IllegalArgumentException">IllegalArgumentException</a></li><li><a href="global.html#readConfiguration">readConfiguration</a></li><li><a href="global.html#RequestLimitException">RequestLimitException</a></li><li><a href="global.html#RequestTimeoutException">RequestTimeoutException</a></li><li><a href="global.html#startProxy">startProxy</a></li><li><a href="global.html#stopProxy">stopProxy</a></li><li><a href="global.html#TableOpExecutionException">TableOpExecutionException</a></li><li><a href="global.html#TimeUnit">TimeUnit</a></li><li><a href="global.html#UnauthorizedException">UnauthorizedException</a></li><li><a href="global.html#UnknownException">UnknownException</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.3</a> on Thu Aug 01 2019 14:19:18 GMT+0530 (India Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

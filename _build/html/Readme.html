@@ -1,0 +1,481 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Oracle NoSQL Database Node.js Driver &mdash; Node.js Driver 0.0.2 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script type="text/javascript" src="_static/jquery.js"></script>
+        <script type="text/javascript" src="_static/underscore.js"></script>
+        <script type="text/javascript" src="_static/doctools.js"></script>
+        <script type="text/javascript" src="_static/language_data.js"></script>
+    
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Welcome to Node.js Driver’s documentation!" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Node.js Driver
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Oracle NoSQL Database Node.js Driver</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#requirements">Requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#changes">Changes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#about-the-proxy">About the proxy</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#requirements-for-the-proxy-server">Requirements for the proxy server</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#running-the-proxy-manually">Running the proxy manually</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#helper-hosts">-helper-hosts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#port">-port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#store">-store</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#running-the-proxy-automatically">Running the proxy automatically</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#package-content">Package content</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#testing">Testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#documentation">Documentation</a></li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Node.js Driver</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Oracle NoSQL Database Node.js Driver</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/Readme.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <p><a class="reference external" href="http://www.oracle.com/technetwork/database/database-technologies/nosqldb/overview/index.html"><img alt="http://www.oracle.com/ocom/groups/public/&#64;otn/documents/webcontent/1876686.jpg" src="http://www.oracle.com/ocom/groups/public/&#64;otn/documents/webcontent/1876686.jpg" />Oracle NoSQL DB</a></p>
+<div class="section" id="oracle-nosql-database-node-js-driver">
+<h1>Oracle NoSQL Database Node.js Driver<a class="headerlink" href="#oracle-nosql-database-node-js-driver" title="Permalink to this headline">¶</a></h1>
+<p>If there are questions and comments on this release please post them on the
+<a class="reference external" href="http://forums.oracle.com/forums/forum.jspa?forumID=1388">Oracle NoSQL Page of the Oracle Technology Network</a>.</p>
+<div class="section" id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
+<p>This module provides access to the Oracle NoSQL Database.
+It requires the use of a proxy server which translates network
+activity from the driver to the Oracle NoSQL Database store using a Thrift-based protocol. The proxy is written in pure Java and can run on any machine that is network accessible by your Node.js code and the Oracle NoSQL Database store.</p>
+<p>This document assumes that you understand the concepts to operate the Oracle NoSQL Database.</p>
+<p>This driver is described in the
+<a class="reference external" href="http://docs.oracle.com/cd/NOSQL/html/driver_table_nodejs/GSGTablesNJS/index.html">NoSQL Database Node.js Getting Started Guide</a> which can be accessed from the [Oracle NoSQL Database documentation page)[http://docs.oracle.com/cd/NOSQL/html/index.html].</p>
+</div>
+<div class="section" id="requirements">
+<h2>Requirements<a class="headerlink" href="#requirements" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>Node.js - this module was tested with v6.6.0.</li>
+<li>A running Oracle NoSQL Database. This release has been certified against the Oracle NoSQL Database versions equal to or higher than 12.2.4.5. This driver may be compatible with releases prior to what is certified but those combinations are not supported by Oracle.</li>
+</ul>
+</div>
+<div class="section" id="changes">
+<h2>Changes<a class="headerlink" href="#changes" title="Permalink to this headline">¶</a></h2>
+<p>See <a class="reference internal" href="Changelog.html"><span class="doc">changelog</span></a> for changes in the current release.</p>
+</div>
+<div class="section" id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h2>
+<p>This driver is distributed via npmjs.com. To install from npmjs.com,
+use the following command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">$npm</span> install <span class="o">[</span>-g<span class="o">]</span> nosqldb-oraclejs
+</pre></div>
+</div>
+</div>
+<div class="section" id="about-the-proxy">
+<h2>About the proxy<a class="headerlink" href="#about-the-proxy" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="requirements-for-the-proxy-server">
+<h3>Requirements for the proxy server<a class="headerlink" href="#requirements-for-the-proxy-server" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li>Java 7 runtime installed.</li>
+</ul>
+<p>The proxy server is a Java application that accepts network traffic from the Node.js driver, translates it into requests that the Oracle NoSQL Database can understand, and forwards the translated request to the store. The proxy also provides
+the reverse translation by interpreting store responses and returning them to the client.</p>
+<p>The proxy can run on any network accessible machine. It has minimal resource requirements and in most cases can run in the same machine as the Node.js application.</p>
+<p>The proxy server bundled with this module during installation. The proxy server resides in the kvproxy directory and is provided as a Java jar file (kvproxy.jar). To use the proxy, you must have a Oracle NoSQL Database installation.</p>
+<p>The proxy can be started manually or automatically from your code.</p>
+</div>
+<div class="section" id="running-the-proxy-manually">
+<h3>Running the proxy manually<a class="headerlink" href="#running-the-proxy-manually" title="Permalink to this headline">¶</a></h3>
+<p>To run the proxy manually you need the exact location of kvclient.jar and kvproxy.jar to include them on the classpath.</p>
+<p>The proxy server itself is started using the command</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>java -jar &lt;path-to-kvproxy.jar&gt;
+</pre></div>
+</div>
+<p>The following information is required when you start the proxy
+server:</p>
+<div class="section" id="helper-hosts">
+<h4>-helper-hosts<a class="headerlink" href="#helper-hosts" title="Permalink to this headline">¶</a></h4>
+<p>This is a list of one or more host:port pairs representing Oracle NOSQL Database Storage Nodes that the proxy server can use to connect to the store.</p>
+</div>
+<div class="section" id="port">
+<h4>-port<a class="headerlink" href="#port" title="Permalink to this headline">¶</a></h4>
+<p>The port on which the proxy server listens for connections from the driver. Your application will connect to the proxy using this port.</p>
+</div>
+<div class="section" id="store">
+<h4>-store<a class="headerlink" href="#store" title="Permalink to this headline">¶</a></h4>
+<p>The name of the store instance to use.</p>
+<p>A range of other command line options are available. In using the proxy server with a secure store, you must provide authentication
+information to the proxy server. In addition, you need to provide a store name to the proxy server. For a description of the proxy server command line options use the -help option from the command line,</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">java</span> <span class="o">-</span><span class="n">jar</span> <span class="o">&lt;</span><span class="n">path</span><span class="o">-</span><span class="n">to</span><span class="o">-</span><span class="n">kvproxy</span><span class="o">.</span><span class="n">jar</span><span class="o">&gt;</span> <span class="o">-</span><span class="n">help</span>
+</pre></div>
+</div>
+<p>To start the proxy, run the following command:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">nohup</span> <span class="n">java</span> <span class="o">-</span><span class="n">jar</span> <span class="o">&lt;</span><span class="n">path</span><span class="o">-</span><span class="n">to</span><span class="o">-</span><span class="n">kvproxy</span><span class="o">.</span><span class="n">jar</span><span class="o">&gt;</span> <span class="o">-</span><span class="n">port</span> <span class="mi">5010</span> <span class="o">-</span><span class="n">helper</span><span class="o">-</span><span class="n">hosts</span> <span class="n">localhost</span><span class="p">:</span><span class="mi">5000</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="running-the-proxy-automatically">
+<h3>Running the proxy automatically<a class="headerlink" href="#running-the-proxy-automatically" title="Permalink to this headline">¶</a></h3>
+<p>To run a proxy from a JavaScript module you must provide proxy parameters to a
+<a class="reference external" href="http://docs.oracle.com/cd/NOSQL/html/driver_table_nodejs/api-reference/ProxyConfiguration.html">ProxyConfiguration</a>
+object. This can be done by filling in the properties of the
+ProxyConfiguration that is created as part of a Configuration object (see example below).</p>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<p>You can run examples found in the module/examples directory. Make sure the module is reachable by the example.</p>
+<p>With a store up and running, you can run an example file using the following
+command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>node example.js
+</pre></div>
+</div>
+<p>Note: Make sure you have nosqldb-oraclejs module installed locally or globally. You can place the example file in a directory and install nosqldb-oraclejs in this directory by using the command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>npm install <span class="o">[</span>-g<span class="o">]</span> nosqldb-oraclejs
+</pre></div>
+</div>
+<p>If -g is specified, nosqldb-oraclejs will be globally accessible.</p>
+<p>Then, to use the module, include nosqldb-oraclejs in your client code:
+var nosqldb = require(‘nosqldb-oraclejs’);</p>
+<p>For more information about how modules work in Node please refer to:
+<a class="reference external" href="http://nodejs.org/api/modules.html">Node.js Manual &amp; Documentation</a>.</p>
+<p>The content of example.js would look like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">Include</span> <span class="n">nosqldb</span><span class="o">-</span><span class="n">oraclejs</span> <span class="n">module</span>
+<span class="n">var</span> <span class="n">nosqldb</span> <span class="o">=</span> <span class="n">require</span><span class="p">(</span><span class="s1">&#39;nosqldb-oraclejs&#39;</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="n">This</span> <span class="ow">is</span> <span class="n">by</span> <span class="n">default</span><span class="p">,</span> <span class="k">if</span> <span class="n">you</span> <span class="n">encounter</span> <span class="n">problems</span> <span class="n">during</span> <span class="n">your</span> <span class="n">tests</span><span class="p">,</span>
+<span class="o">//</span> <span class="n">Try</span> <span class="n">to</span> <span class="n">change</span> <span class="n">the</span> <span class="n">log</span> <span class="n">level</span><span class="p">,</span> <span class="n">values</span> <span class="n">are</span> <span class="n">available</span> <span class="n">under</span>
+<span class="o">//</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">LOG_LEVELS</span> <span class="n">path</span><span class="p">:</span>
+<span class="o">//</span>   <span class="n">OFF</span><span class="p">,</span> <span class="n">FATAL</span><span class="p">,</span> <span class="n">ERROR</span><span class="p">,</span> <span class="n">WARN</span><span class="p">,</span> <span class="n">INFO</span><span class="p">,</span> <span class="n">DEBUG</span><span class="p">,</span> <span class="n">TRACE</span><span class="p">,</span> <span class="n">ALL</span>
+<span class="n">nosqldb</span><span class="o">.</span><span class="n">Logger</span><span class="o">.</span><span class="n">logLevel</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">LOG_LEVELS</span><span class="o">.</span><span class="n">OFF</span><span class="p">;</span>
+<span class="n">nosqldb</span><span class="o">.</span><span class="n">Logger</span><span class="o">.</span><span class="n">logToConsole</span> <span class="o">=</span> <span class="n">false</span><span class="p">;</span>
+<span class="n">nosqldb</span><span class="o">.</span><span class="n">Logger</span><span class="o">.</span><span class="n">logToFile</span> <span class="o">=</span> <span class="n">false</span><span class="p">;</span>
+
+<span class="o">//</span> <span class="n">Working</span> <span class="k">with</span> <span class="n">types</span>
+<span class="n">var</span> <span class="n">WriteOptions</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">WriteOptions</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">Durability</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">Durability</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">SyncPolicy</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">SyncPolicy</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">ReplicaAckPolicy</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">ReplicaAckPolicy</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">ReadOptions</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">ReadOptions</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">Consistency</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Types</span><span class="o">.</span><span class="n">SimpleConsistency</span><span class="p">;</span>
+
+<span class="n">var</span> <span class="n">TABLE_NAME</span> <span class="o">=</span> <span class="s1">&#39;example_table&#39;</span><span class="p">;</span>
+<span class="n">var</span> <span class="n">NO_OF_ROWS</span> <span class="o">=</span> <span class="mi">2</span><span class="p">;</span>
+
+<span class="o">//</span> <span class="n">Create</span> <span class="n">a</span> <span class="n">configuration</span> <span class="nb">object</span>
+<span class="n">var</span> <span class="n">configuration</span> <span class="o">=</span> <span class="n">new</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">Configuration</span><span class="p">();</span>
+<span class="n">configuration</span><span class="o">.</span><span class="n">proxy</span><span class="o">.</span><span class="n">startProxy</span> <span class="o">=</span> <span class="n">true</span><span class="p">;</span>
+<span class="n">configuration</span><span class="o">.</span><span class="n">proxy</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="s1">&#39;localhost:5010&#39;</span><span class="p">;</span>
+<span class="n">configuration</span><span class="o">.</span><span class="n">storeHelperHosts</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;localhost:5000&#39;</span><span class="p">];</span>
+<span class="n">configuration</span><span class="o">.</span><span class="n">storeName</span> <span class="o">=</span> <span class="s1">&#39;kvstore&#39;</span><span class="p">;</span>
+
+<span class="o">//</span> <span class="n">Create</span> <span class="n">a</span> <span class="n">store</span> <span class="k">with</span> <span class="n">the</span> <span class="n">specified</span> <span class="n">configuration</span>
+<span class="n">var</span> <span class="n">store</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">createStore</span><span class="p">(</span><span class="n">configuration</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="n">Create</span> <span class="n">an</span> <span class="nb">open</span> <span class="n">handler</span>
+<span class="n">store</span><span class="o">.</span><span class="n">on</span><span class="p">(</span><span class="s1">&#39;open&#39;</span><span class="p">,</span> <span class="n">function</span> <span class="p">()</span> <span class="p">{</span>
+  <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Connected to store&#39;</span><span class="p">);</span>
+
+  <span class="o">//</span> <span class="n">Create</span> <span class="n">a</span> <span class="n">table</span>
+  <span class="n">store</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s1">&#39; CREATE TABLE if not exists &#39;</span> <span class="o">+</span> <span class="n">TABLE_NAME</span> <span class="o">+</span>
+  <span class="s1">&#39; ( id long, name string, primary key(id) ) &#39;</span><span class="p">,</span> <span class="n">function</span> <span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="k">return</span><span class="p">;</span>
+    <span class="n">store</span><span class="o">.</span><span class="n">refreshTables</span><span class="p">(</span><span class="n">function</span> <span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="k">return</span><span class="p">;</span>
+
+      <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Table is created.&#39;</span><span class="p">);</span>
+      <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Inserting data...&#39;</span><span class="p">);</span>
+      <span class="o">//</span> <span class="n">write</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">table</span>
+      <span class="n">var</span> <span class="n">writeOptions</span> <span class="o">=</span> <span class="n">new</span> <span class="n">WriteOptions</span><span class="p">(</span>
+        <span class="n">new</span> <span class="n">Durability</span><span class="p">(</span><span class="n">SyncPolicy</span><span class="o">.</span><span class="n">NO_SYNC</span><span class="p">,</span>
+          <span class="n">ReplicaAckPolicy</span><span class="o">.</span><span class="n">ALL</span><span class="p">,</span> <span class="n">SyncPolicy</span><span class="o">.</span><span class="n">NO_SYNC</span><span class="p">),</span> <span class="mi">1000</span><span class="p">);</span>
+
+      <span class="k">for</span> <span class="p">(</span><span class="n">var</span> <span class="n">putCount</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">putCallback</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">putCount</span> <span class="o">&lt;</span> <span class="n">NO_OF_ROWS</span><span class="p">;</span>
+           <span class="n">putCount</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="o">//</span> <span class="n">setting</span> <span class="n">up</span> <span class="n">the</span> <span class="n">row</span>
+        <span class="n">var</span> <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="nb">id</span><span class="p">:</span> <span class="n">putCount</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="s1">&#39;name #&#39;</span> <span class="o">+</span> <span class="n">putCount</span><span class="p">};</span>
+
+        <span class="n">store</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">TABLE_NAME</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">writeOptions</span><span class="p">,</span>
+          <span class="n">function</span> <span class="p">()</span> <span class="p">{</span>
+            <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Writing row #&#39;</span> <span class="o">+</span> <span class="n">putCallback</span><span class="o">++</span><span class="p">);</span>
+          <span class="p">});</span>
+      <span class="p">}</span>
+      <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Reading data...&#39;</span><span class="p">);</span>
+      <span class="o">//</span> <span class="n">read</span> <span class="n">data</span> <span class="kn">from</span> <span class="nn">the</span> <span class="n">table</span>
+      <span class="n">var</span> <span class="n">readOptions</span> <span class="o">=</span> <span class="n">new</span> <span class="n">ReadOptions</span><span class="p">(</span><span class="n">Consistency</span><span class="o">.</span><span class="n">NONE_REQUIRED</span><span class="p">,</span> <span class="mi">1000</span><span class="p">);</span>
+
+      <span class="k">for</span> <span class="p">(</span><span class="n">var</span> <span class="n">getCount</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">getCallback</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">getCount</span> <span class="o">&lt;</span> <span class="n">NO_OF_ROWS</span><span class="p">;</span>
+           <span class="n">getCount</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="o">//</span> <span class="n">setup</span> <span class="n">the</span> <span class="n">primary</span> <span class="n">key</span>
+        <span class="n">var</span> <span class="n">key</span> <span class="o">=</span> <span class="p">{</span><span class="nb">id</span><span class="p">:</span> <span class="n">getCount</span><span class="p">};</span>
+
+        <span class="n">store</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">TABLE_NAME</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">readOptions</span><span class="p">,</span> <span class="n">function</span> <span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span> <span class="p">{</span>
+          <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Reading row #&#39;</span> <span class="o">+</span> <span class="n">getCallback</span><span class="p">);</span>
+          <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">currentRow</span><span class="p">);</span>
+
+          <span class="o">//</span><span class="n">Close</span> <span class="n">the</span> <span class="n">store</span> <span class="n">on</span> <span class="n">the</span> <span class="n">last</span> <span class="n">callback</span>
+          <span class="k">if</span> <span class="p">(</span><span class="o">++</span><span class="n">getCallback</span> <span class="o">===</span> <span class="n">NO_OF_ROWS</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Closing connection...&#39;</span><span class="p">);</span>
+            <span class="n">store</span><span class="o">.</span><span class="n">close</span><span class="p">();</span>
+          <span class="p">}</span>
+        <span class="p">});</span>
+      <span class="p">}</span>
+
+    <span class="p">});</span> <span class="o">//</span> <span class="n">RefreshTables</span>
+  <span class="p">});</span> <span class="o">//</span> <span class="n">Execute</span>
+<span class="p">})</span><span class="o">.</span><span class="n">on</span><span class="p">(</span><span class="s1">&#39;close&#39;</span><span class="p">,</span> <span class="n">function</span> <span class="p">()</span> <span class="p">{</span>
+  <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Store connection closed.&#39;</span><span class="p">);</span>
+  <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Shutting down proxy.&#39;</span><span class="p">);</span>
+  <span class="n">store</span><span class="o">.</span><span class="n">shutdownProxy</span><span class="p">();</span>
+  <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s1">&#39;Proxy closed.&#39;</span><span class="p">);</span>
+<span class="p">})</span><span class="o">.</span><span class="n">on</span><span class="p">(</span><span class="s1">&#39;error&#39;</span><span class="p">,</span> <span class="n">function</span> <span class="p">(</span><span class="n">error</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">console</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">error</span><span class="p">);</span>
+<span class="p">});</span>
+
+<span class="o">//</span> <span class="n">Open</span> <span class="n">the</span> <span class="n">store</span>
+<span class="n">store</span><span class="o">.</span><span class="n">open</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permalink to this headline">¶</a></h2>
+<p>The logging system is OFF by default. If you encounter problems or want to view events you can change the log level. Values available under .LOG_LEVELS path are: OFF, FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL</p>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">var</span> <span class="n">nosqldb</span> <span class="o">=</span> <span class="n">require</span><span class="p">(</span><span class="s1">&#39;nosqldb-oraclejs&#39;</span><span class="p">);</span>
+<span class="n">nosqldb</span><span class="o">.</span><span class="n">Logger</span><span class="o">.</span><span class="n">logLevel</span> <span class="o">=</span> <span class="n">nosqldb</span><span class="o">.</span><span class="n">LOG_LEVELS</span><span class="o">.</span><span class="n">ALL</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Additionally, if no parameters are specified for the Logger, it writes
+a file with default options. This file will be read from time to time if no
+parameters are specified, the name of the file is: nosqldb.logconf.json. Set
+loglevel to 7 to get all the details.</p>
+</div>
+<div class="section" id="package-content">
+<h2>Package content<a class="headerlink" href="#package-content" title="Permalink to this headline">¶</a></h2>
+<table width="400" border="0">
+<tr><td> doc/      </td><td>Documentation reference</td></tr>
+<tr><td> lib/      </td><td>The nosqldb-oraclejs source code</td></tr>
+<tr><td> kvproxy/  </td><td>Required files to start a proxy server</td></tr>
+<tr><td> test/     </td><td>Test cases</td></tr>
+<tr><td> examples/ </td><td>Example files</td></tr>
+</table></div>
+<div class="section" id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Permalink to this headline">¶</a></h2>
+<p>To run the test cases included in the package you need to have mocha installed. To install mocha use:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">npm</span> <span class="n">install</span> <span class="o">-</span><span class="n">g</span> <span class="n">mocha</span>
+</pre></div>
+</div>
+<p>You also need the module dependencies, they are:</p>
+<ul class="simple">
+<li>thrift</li>
+<li>node-int64</li>
+<li>q</li>
+<li>nodeunit</li>
+<li>jsdoc</li>
+</ul>
+<p>If you installed the module with npm install, these dependencies should be inside node_modules/nosqldb-oraclejs/node_modules directory.</p>
+<p>Then, in the module directory (‘nosqldb-oraclejs’) run the command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>mocha -g Setup
+</pre></div>
+</div>
+<p>This will setup the required tables for the tests, then run the command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>mocha
+</pre></div>
+</div>
+<p>Mocha will automatically look for test directory and try to run the tests.</p>
+<p>Tests cases use a file that contains the Configuration object used to connect to
+the test store. This file is called test-conf.json and is located under the test
+directory.
+Modify this file to fit your needs and be sure to:</p>
+<ul class="simple">
+<li>set KVCLIENT_JAR to your kvclient.jar file</li>
+<li>set KVPROXY_JAR to your kvproxy.jar file</li>
+</ul>
+</div>
+<div class="section" id="documentation">
+<h2>Documentation<a class="headerlink" href="#documentation" title="Permalink to this headline">¶</a></h2>
+<p>The complete
+<a class="reference external" href="http://docs.oracle.com/cd/NOSQL/html">Oracle NoSQL database documentation</a>
+is available online and the JavaScript driver reference is included in the nosqldb-oraclejs doc directory.</p>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="index.html" class="btn btn-neutral float-left" title="Welcome to Node.js Driver’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2019, Node.js Driver
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

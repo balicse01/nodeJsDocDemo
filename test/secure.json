@@ -1,0 +1,7 @@
+{
+  "KVSTORE_JAR": "",
+  "port": "5000",
+  "admin": "5001",
+  "haRange": "5890,5900",
+  "store": "secured"
+}

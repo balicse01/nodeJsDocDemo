@@ -1,0 +1,13 @@
+{
+  "storeName": "kvstore",
+  "storeHelperHosts": ["localhost:5000"],
+  "iteratorBufferSize" : 5,
+  "proxy" : {
+    "startProxy": true,
+    "host": "localhost:5010",
+    "readZones": ""
+  },
+  "connectionAttempts" : 3,
+  "readZones" : "",
+  "username" : null
+}
